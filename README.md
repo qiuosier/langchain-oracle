@@ -1,70 +1,17 @@
-# 🦜️🔗 LangChain {partner}
+# 🦜️🔗 LangChain 🤝 Oracle Cloud Infrastructure (OCI)
 
-This repository contains 1 package with {partner} integrations with LangChain:
+This repository provides LangChain components for various OCI services. It aims to replace and expand upon the existing LangChain OCI components found in the `langchain-community` package in the LangChain repository.
 
-- [langchain-{package_lower}](https://pypi.org/project/langchain-{package_lower}/)
+## Features
 
-## Initial Repo Checklist (Remove this section after completing)
+- **LLMs**: Includes LLM classes for OCI services like [Generative AI](https://cloud.oracle.com/ai-services/generative-ai) and [ModelDeployment Endpoints](https://cloud.oracle.com/ai-services/model-deployment), allowing you to leverage their language models within LangChain.
+- **Retrievers**: 
+- **Graphs**: 
+- **Agents**: Includes Runnables to support [Oracle Generative AI Agents](https://www.oracle.com/artificial-intelligence/generative-ai/agents/), allowing you to leverage Generative AI Agents within LangChain and LangGraph.
+- **More to come**: This repository will continue to expand and offer additional components for various OCI services as development progresses.
 
-Welcome to the LangChain Partner Integration Repository! This checklist will help you get started with your new repository.
+**Note**: This repository will replace all OCI integrations currently present in the `langchain-community` package. Users are encouraged to migrate to this repository as soon as possible.
 
-After creating your repo from the integration-repo-template, we'll go through the following steps:
+## Installation
 
-1. Setting up your new repository in GitHub
-2. 
-
-This setup assumes that the partner package is already split. For those instructions,
-see [these docs](https://python.langchain.com/docs/contributing/integrations#partner-packages).
-
-Code (auto ecli)
-
-- [ ] Fill out the readme above (for folks that follow pypi link)
-- [ ] Copy package into /libs folder
-- [ ] Update these fields in /libs/*/pyproject.toml
-
-    - `tool.poetry.repository`
-    - `tool.poetry.urls["Source Code"]`
-
-Workflow code (auto ecli)
-
-- [ ] Populate .github/workflows/_release.yml with `on.workflow_dispatch.inputs.working-directory.default`
-- [ ] Configure `LIB_DIRS` in .github/scripts/check_diff.py
-
-Workflow code (manual)
-
-- [ ] Add secrets as env vars in .github/workflows/_release.yml
-
-Monorepo workflow code (manual)
-
-- [ ] Pull in new code location, remove old in .github/workflows/api_doc_build.yml
-
-In github (manual)
-
-- [ ] Add integration testing secrets in Github (ask Erick for help)
-- [ ] Add partner collaborators in Github (ask Erick for help)
-- [ ] "Allow auto-merge" in General Settings 
-- [ ] Only "Allow squash merging" in General Settings
-- [ ] Set up ruleset matching CI build (ask Erick for help)
-    - name: ci build
-    - enforcement: active
-    - bypass: write
-    - target: default branch
-    - rules: restrict deletions, require status checks ("CI Success"), block force pushes
-- [ ] Set up ruleset
-    - name: require prs
-    - enforcement: active
-    - bypass: none
-    - target: default branch
-    - rules: restrict deletions, require a pull request before merging (0 approvals, no boxes), block force pushes
-
-Pypi (manual)
-
-- [ ] Add new repo to test-pypi and pypi trusted publishing (ask Erick for help)
-
-Slack
-
-- [ ] Set up release alerting in Slack (ask Erick for help)
-
-release:
-/github subscribe langchain-ai/langchain-{partner_lower} releases workflows:{name:"release"}
-/github unsubscribe langchain-ai/langchain-{partner_lower} issues pulls commits deployments
+You can install the `langchain-oci` package from PyPI.
