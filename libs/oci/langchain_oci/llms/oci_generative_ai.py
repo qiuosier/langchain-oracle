@@ -231,7 +231,7 @@ class OCIGenAI(LLM, OCIGenAIBase):
     Example:
         .. code-block:: python
 
-            from langchain_community.llms import OCIGenAI
+            from langchain_oci.llms import OCIGenAI
 
             llm = OCIGenAI(
                     model_id="MY_MODEL_ID",

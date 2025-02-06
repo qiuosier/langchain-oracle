@@ -49,8 +49,8 @@ from langchain_core.tools import BaseTool
 from langchain_core.utils.function_calling import convert_to_openai_function
 from pydantic import BaseModel, ConfigDict
 
-from langchain_community.llms.oci_generative_ai import OCIGenAIBase
-from langchain_community.llms.utils import enforce_stop_tokens
+from langchain_oci.llms.oci_generative_ai import OCIGenAIBase
+from langchain_oci.llms.utils import enforce_stop_tokens
 
 CUSTOM_ENDPOINT_PREFIX = "ocid1.generativeaiendpoint"
 
@@ -766,7 +766,7 @@ class ChatOCIGenAI(BaseChatModel, OCIGenAIBase):
     Instantiate:
         .. code-block:: python
 
-            from langchain_community.chat_models import ChatOCIGenAI
+            from langchain_oci.chat_models import ChatOCIGenAI
 
             chat = ChatOCIGenAI(
                 model_id="cohere.command-r-16k",
@@ -891,7 +891,7 @@ class ChatOCIGenAI(BaseChatModel, OCIGenAIBase):
                     calls <<tool_name>> tool.
                 - False or None: no effect, default Meta behavior.
             kwargs: Any additional parameters are passed directly to
-                :meth:`~langchain_community.chat_models.oci_generative_ai.ChatOCIGenAI.bind`.
+                :meth:`~langchain_oci.chat_models.oci_generative_ai.ChatOCIGenAI.bind`.
         """
 
         formatted_tools = [self._provider.convert_to_oci_tool(tool) for tool in tools]
