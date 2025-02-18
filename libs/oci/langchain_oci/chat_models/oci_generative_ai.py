@@ -759,6 +759,8 @@ class ChatOCIGenAI(BaseChatModel, OCIGenAIBase):
             The authentication type to use, e.g., API_KEY (default), SECURITY_TOKEN, INSTANCE_PRINCIPAL, RESOURCE_PRINCIPAL.
         auth_profile: Optional[str]
             The name of the profile in ~/.oci/config, if not specified , DEFAULT will be used.
+        auth_file_location: Optional[str]
+            Path to the config file, If not specified, ~/.oci/config will be used.
         provider: str
             Provider name of the model. Default to None, will try to be derived from the model_id otherwise, requires user input.
     See full list of supported init args and their descriptions in the params section.
@@ -920,11 +922,13 @@ class ChatOCIGenAI(BaseChatModel, OCIGenAIBase):
                 must match the OCI Generative AI function-calling spec.
             method:
                 The method for steering model generation, either "function_calling"
-                or "json_mode". If "function_calling" then the schema will be converted
-                to an OCI function and the returned model will make use of the
-                function-calling API. If "json_mode" then Cohere's JSON mode will be
+                or "json_mode" or "json_schema. If "function_calling" then the schema
+                will be converted to an OCI function and the returned model will make
+                use of the function-calling API. If "json_mode" then Cohere's JSON mode will be
                 used. Note that if using "json_mode" then you must include instructions
                 for formatting the output into the desired schema into the model call.
+                If "json_schema" then it allows the user to pass a json schema (or pydantic)
+                to the model for structured output. This is the default method.
             include_raw:
                 If False then only the parsed structured output is returned. If
                 an error occurs during model output parsing it will be raised. If True
@@ -971,12 +975,30 @@ class ChatOCIGenAI(BaseChatModel, OCIGenAIBase):
                     key_name=tool_name, first_tool_only=True
                 )
         elif method == "json_mode":
-            llm = self.bind(response_format={"type": "json_object"})
+            llm = self.bind(response_format={"type": "JSON_OBJECT"})
             output_parser = (
                 PydanticOutputParser(pydantic_object=schema)  # type: ignore[type-var, arg-type]
                 if is_pydantic_schema
                 else JsonOutputParser()
             )
+        elif method == "json_schema":
+            response_format = (
+                dict(
+                    schema.model_json_schema().items()  # type: ignore[union-attr]
+                )
+                if is_pydantic_schema
+                else schema
+            )
+            llm_response_format: Dict[Any, Any] = {"type": "JSON_OBJECT"}
+            llm_response_format["schema"] = {
+                k: v
+                for k, v in response_format.items()  # type: ignore[union-attr]
+            }
+            llm = self.bind(response_format=llm_response_format)
+            if is_pydantic_schema:
+                output_parser = PydanticOutputParser(pydantic_object=schema)
+            else:
+                output_parser = JsonOutputParser()
         else:
             raise ValueError(
                 f"Unrecognized method argument. "
