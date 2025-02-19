@@ -5,8 +5,6 @@ This repository provides LangChain components for various OCI services. It aims 
 ## Features
 
 - **LLMs**: Includes LLM classes for OCI services like [Generative AI](https://cloud.oracle.com/ai-services/generative-ai) and [ModelDeployment Endpoints](https://cloud.oracle.com/ai-services/model-deployment), allowing you to leverage their language models within LangChain.
-- **Retrievers**: 
-- **Graphs**: 
 - **Agents**: Includes Runnables to support [Oracle Generative AI Agents](https://www.oracle.com/artificial-intelligence/generative-ai/agents/), allowing you to leverage Generative AI Agents within LangChain and LangGraph.
 - **More to come**: This repository will continue to expand and offer additional components for various OCI services as development progresses.
 
