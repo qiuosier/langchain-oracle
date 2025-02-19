@@ -15,6 +15,7 @@ from typing import (
     Sequence,
     Type,
     Union,
+    Set
 )
 
 from langchain_core.callbacks import CallbackManagerForLLMRun
@@ -33,7 +34,7 @@ from langchain_core.messages import (
     ToolCall,
     ToolMessage,
 )
-from langchain_core.messages.tool import ToolCallChunk
+from langchain_core.messages.tool import ToolCallChunk, tool_call_chunk
 from langchain_core.output_parsers import (
     JsonOutputParser,
     PydanticOutputParser,
@@ -80,34 +81,6 @@ def _remove_signature_from_tool_description(name: str, description: str) -> str:
     return description
 
 
-def _format_oci_tool_calls(
-    tool_calls: Optional[List[Any]] = None,
-) -> List[Dict]:
-    """
-    Formats a OCI GenAI API response into the tool call format used in Langchain.
-    """
-    if not tool_calls:
-        return []
-
-    formatted_tool_calls = []
-    for tool_call in tool_calls:
-        formatted_tool_calls.append(
-            {
-                "id": tool_call.id
-                if "id" in tool_call.attribute_map
-                else uuid.uuid4().hex[:],
-                "function": {
-                    "name": tool_call.name,
-                    "arguments": json.loads(tool_call.arguments)
-                    if "arguments" in tool_call.attribute_map
-                    else json.dumps(tool_call.parameters),
-                },
-                "type": "function",
-            }
-        )
-    return formatted_tool_calls
-
-
 def _convert_oci_tool_call_to_langchain(tool_call: Any) -> ToolCall:
     """Convert a OCI GenAI tool call into langchain_core.messages.ToolCall"""
     return ToolCall(
@@ -146,6 +119,12 @@ class Provider(ABC):
     def chat_stream_tool_calls(self, event_data: Dict) -> List[Any]: ...
 
     @abstractmethod
+    def format_response_tool_calls(self, tool_calls: List[Any]) -> List[Any]: ...
+
+    @abstractmethod
+    def format_stream_tool_calls(self, tool_calls: List[Any]) -> List[Any]: ...
+
+    @abstractmethod
     def get_role(self, message: BaseMessage) -> str: ...
 
     @abstractmethod
@@ -167,8 +146,16 @@ class Provider(ABC):
         ],
     ) -> Optional[Any]: ...
 
+    @abstractmethod
+    def process_stream_tool_calls(
+        self,
+        event_data: Dict,
+        tool_call_ids: Set[str],
+    ) -> List[ToolCallChunk]: ...
+
 
 class CohereProvider(Provider):
+    """Cohere provider."""
     stop_sequence_key: str = "stop_sequences"
 
     def __init__(self) -> None:
@@ -213,7 +200,7 @@ class CohereProvider(Provider):
         if self.chat_tool_calls(response):
             # Only populate tool_calls when 1) present on the response and
             #  2) has one or more calls.
-            generation_info["tool_calls"] = _format_oci_tool_calls(
+            generation_info["tool_calls"] = self.format_response_tool_calls(
                 self.chat_tool_calls(response)
             )
 
@@ -225,19 +212,10 @@ class CohereProvider(Provider):
             "citations": event_data.get("citations"),
             "finish_reason": event_data.get("finishReason"),
         }
-        if "toolCalls" in event_data:
-            generation_info["tool_calls"] = []
-            for tool_call in event_data["toolCalls"]:
-                generation_info["tool_calls"].append(
-                    {
-                        "id": uuid.uuid4().hex[:],
-                        "function": {
-                            "name": tool_call["name"],
-                            "arguments": json.dumps(tool_call["parameters"]),
-                        },
-                        "type": "function",
-                    }
-                )
+        if self.chat_stream_tool_calls(event_data):
+            generation_info["tool_calls"] = self.format_stream_tool_calls(
+                self.chat_stream_tool_calls(event_data)
+            )
 
         generation_info = {k: v for k, v in generation_info.items() if v is not None}
 
@@ -248,6 +226,50 @@ class CohereProvider(Provider):
 
     def chat_stream_tool_calls(self, event_data: Dict) -> List[Any]:
         return event_data.get("toolCalls", [])
+
+    def format_response_tool_calls(
+        self, tool_calls: Optional[List[Any]] = None,
+    ) -> List[Dict]:
+        """
+        Formats a OCI GenAI API Cohere response into the tool call format used in Langchain.
+        """
+        if not tool_calls:
+            return []
+
+        formatted_tool_calls: List[Dict] = []
+        for tool_call in tool_calls:
+            formatted_tool_calls.append(
+                {
+                    "id": uuid.uuid4().hex[:],
+                    "function": {
+                        "name": tool_call.name,
+                        "arguments": json.dumps(tool_call.parameters),
+                    },
+                    "type": "function",
+                }
+            )
+        return formatted_tool_calls
+
+    def format_stream_tool_calls(self, tool_calls: List[Any]) -> List[Dict]:
+        """
+        Formats a OCI GenAI API Cohere stream response into the tool call format used in Langchain.
+        """
+        if not tool_calls:
+            return []
+
+        formatted_tool_calls: List[Dict] = []
+        for tool_call in tool_calls:
+            formatted_tool_calls.append(
+                {
+                    "id": uuid.uuid4().hex[:],
+                    "function": {
+                        "name": tool_call["name"],
+                        "arguments": json.dumps(tool_call["parameters"]),
+                    },
+                    "type": "function",
+                }
+            )
+        return formatted_tool_calls
 
     def get_role(self, message: BaseMessage) -> str:
         if isinstance(message, HumanMessage):
@@ -419,8 +441,40 @@ class CohereProvider(Provider):
             )
         return None
 
+    def process_stream_tool_calls(self, event_data: Dict, tool_call_ids: Set[str]) -> List[Any]:
+        """Process Cohere stream tool calls from event data and return tool call chunks.
+        
+        Args:
+            event_data: The event data from the stream
+            tool_call_ids: Set of existing tool call IDs for index tracking
+            
+        Returns:
+            List of ToolCallChunk objects
+        """
+        tool_call_chunks = []
+        tool_call_response = self.chat_stream_tool_calls(event_data)
+
+        if not tool_call_response:
+            return tool_call_chunks
+
+        for tool_call in self.format_stream_tool_calls(tool_call_response):
+            tool_id = tool_call.get("id")
+            if tool_id:
+                tool_call_ids.add(tool_id)
+
+            tool_call_chunks.append(
+                tool_call_chunk(
+                    name=tool_call["function"].get("name"),
+                    args=tool_call["function"].get("arguments"),
+                    id=tool_id,
+                    index=len(tool_call_ids) - 1, # index tracking
+                )
+            )
+        return tool_call_chunks
+
 
 class MetaProvider(Provider):
+    """Meta provider."""
     stop_sequence_key: str = "stop"
 
     def __init__(self) -> None:
@@ -459,10 +513,13 @@ class MetaProvider(Provider):
         return content.text if content else ""
 
     def chat_stream_to_text(self, event_data: Dict) -> str:
-        return event_data["message"]["content"][0]["text"]
+        content = event_data.get("message", {}).get("content", None)
+        if not content:
+            return ""
+        return content[0]["text"]
 
     def is_chat_stream_end(self, event_data: Dict) -> bool:
-        return "message" not in event_data
+        return "finishReason" in event_data
 
     def chat_generation_info(self, response: Any) -> Dict[str, Any]:
         generation_info: Dict[str, Any] = {
@@ -472,21 +529,68 @@ class MetaProvider(Provider):
         if self.chat_tool_calls(response):
             # Only populate tool_calls when 1) present on the response and
             #  2) has one or more calls.
-            generation_info["tool_calls"] = _format_oci_tool_calls(
+            generation_info["tool_calls"] = self.format_response_tool_calls(
                 self.chat_tool_calls(response)
             )
         return generation_info
 
     def chat_stream_generation_info(self, event_data: Dict) -> Dict[str, Any]:
-        return {
+        generation_info: Dict[str, Any] = {
             "finish_reason": event_data["finishReason"],
         }
+        return generation_info
 
     def chat_tool_calls(self, response: Any) -> List[Any]:
         return response.data.chat_response.choices[0].message.tool_calls
 
     def chat_stream_tool_calls(self, event_data: Dict) -> List[Any]:
-        return event_data["message"]["tool_calls"]
+        return event_data.get("message", {}).get("toolCalls", [])
+
+    def format_response_tool_calls(self, tool_calls: List[Any]) -> List[Dict]:
+        """
+        Formats a OCI GenAI API Meta response into the tool call format used in Langchain.
+        """
+
+        if not tool_calls:
+            return []
+
+        formatted_tool_calls: List[Dict] = []
+        for tool_call in tool_calls:
+            formatted_tool_calls.append(
+                {
+                    "id": tool_call.id,
+                    "function": {
+                        "name": tool_call.name,
+                        "arguments": json.loads(tool_call.arguments),
+                    },
+                    "type": "function",
+                }
+            )
+        return formatted_tool_calls
+
+    def format_stream_tool_calls(
+        self, tool_calls: Optional[List[Any]] = None,
+    ) -> List[Dict]:
+        """
+        Formats a OCI GenAI API Meta stream response into the tool call format used in Langchain.
+        """
+        if not tool_calls:
+            return []
+
+        formatted_tool_calls: List[Dict] = []
+        for tool_call in tool_calls:
+            # empty string for fields not present in the tool call
+            formatted_tool_calls.append(
+                {
+                    "id": tool_call.get("id", ""),
+                    "function": {
+                        "name": tool_call.get("name", ""),
+                        "arguments": tool_call.get("arguments", ""),
+                    },
+                    "type": "function",
+                }
+            )
+        return formatted_tool_calls
 
     def get_role(self, message: BaseMessage) -> str:
         # meta only supports alternating user/assistant roles
@@ -731,6 +835,37 @@ class MetaProvider(Provider):
             f"Received: {tool_choice}"
         )
 
+    def process_stream_tool_calls(self, event_data: Dict, tool_call_ids: Set[str]) -> List[Any]:
+        """Process OCI Gen AI Meta stream tool calls from event data and return tool call chunks.
+        
+        Args:
+            event_data: The event data from the stream
+            tool_call_ids: Set of existing tool call IDs for index tracking
+            
+        Returns:
+            List of ToolCallChunk objects
+        """
+        tool_call_chunks = []
+        tool_call_response = self.chat_stream_tool_calls(event_data)
+
+        if not tool_call_response:
+            return tool_call_chunks
+
+        for tool_call in self.format_stream_tool_calls(tool_call_response):
+            tool_id = tool_call.get("id")
+            if tool_id:
+                tool_call_ids.add(tool_id)
+
+            tool_call_chunks.append(
+                tool_call_chunk(
+                    name=tool_call["function"].get("name"),
+                    args=tool_call["function"].get("arguments"),
+                    id=tool_id,
+                    index=len(tool_call_ids) - 1, # index tracking
+                )
+            )
+        return tool_call_chunks
+
 
 class ChatOCIGenAI(BaseChatModel, OCIGenAIBase):
     """ChatOCIGenAI chat model integration.
@@ -890,7 +1025,7 @@ class ChatOCIGenAI(BaseChatModel, OCIGenAIBase):
                 - "any" or "required" or True: force at least one tool to be called.
                 - dict of the form
                     {"type": "function", "function": {"name": <<tool_name>>}}:
-                    calls <<tool_name>> tool.
+                calls <<tool_name>> tool.
                 - False or None: no effect, default Meta behavior.
             kwargs: Any additional parameters are passed directly to
                 :meth:`~langchain_oci.chat_models.oci_generative_ai.ChatOCIGenAI.bind`.
@@ -1087,6 +1222,8 @@ class ChatOCIGenAI(BaseChatModel, OCIGenAIBase):
             llm_output=llm_output,
         )
 
+    
+
     def _stream(
         self,
         messages: List[BaseMessage],
@@ -1094,42 +1231,34 @@ class ChatOCIGenAI(BaseChatModel, OCIGenAIBase):
         run_manager: Optional[CallbackManagerForLLMRun] = None,
         **kwargs: Any,
     ) -> Iterator[ChatGenerationChunk]:
+        """Stream the chat response."""
         request = self._prepare_request(messages, stop=stop, stream=True, **kwargs)
         response = self.client.chat(request)
+        tool_call_ids: Set[str] = set()
 
         for event in response.data.events():
             event_data = json.loads(event.data)
-            if not self._provider.is_chat_stream_end(event_data):  # still streaming
+            
+            if not self._provider.is_chat_stream_end(event_data):
+                # Process streaming content
                 delta = self._provider.chat_stream_to_text(event_data)
-                chunk = ChatGenerationChunk(message=AIMessageChunk(content=delta))
+                tool_call_chunks = self._provider.process_stream_tool_calls(event_data, tool_call_ids)
+                
+                chunk = ChatGenerationChunk(
+                    message=AIMessageChunk(
+                        content=delta,
+                        tool_call_chunks=tool_call_chunks,
+                    )
+                )
                 if run_manager:
                     run_manager.on_llm_new_token(delta, chunk=chunk)
                 yield chunk
-            else:  # stream end
+            else:
                 generation_info = self._provider.chat_stream_generation_info(event_data)
-                tool_call_chunks = []
-                if tool_calls := generation_info.get("tool_calls"):
-                    content = self._provider.chat_stream_to_text(event_data)
-                    try:
-                        tool_call_chunks = [
-                            ToolCallChunk(
-                                name=tool_call["function"].get("name"),
-                                args=tool_call["function"].get("arguments"),
-                                id=tool_call.get("id"),
-                                index=tool_call.get("index"),
-                            )
-                            for tool_call in tool_calls
-                        ]
-                    except KeyError:
-                        pass
-                else:
-                    content = ""
-                message = AIMessageChunk(
-                    content=content,
-                    additional_kwargs=generation_info,
-                    tool_call_chunks=tool_call_chunks,
-                )
                 yield ChatGenerationChunk(
-                    message=message,
-                    generation_info=generation_info,
+                    message=AIMessageChunk(
+                        content="",
+                        additional_kwargs=generation_info,
+                    ),
+                    generation_info=generation_info
                 )
