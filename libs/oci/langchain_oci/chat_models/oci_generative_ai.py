@@ -13,9 +13,9 @@ from typing import (
     Mapping,
     Optional,
     Sequence,
+    Set,
     Type,
     Union,
-    Set
 )
 
 from langchain_core.callbacks import CallbackManagerForLLMRun
@@ -95,48 +95,59 @@ def _convert_oci_tool_call_to_langchain(tool_call: Any) -> ToolCall:
 class Provider(ABC):
     @property
     @abstractmethod
-    def stop_sequence_key(self) -> str: ...
+    def stop_sequence_key(self) -> str:
+        ...
 
     @abstractmethod
-    def chat_response_to_text(self, response: Any) -> str: ...
+    def chat_response_to_text(self, response: Any) -> str:
+        ...
 
     @abstractmethod
-    def chat_stream_to_text(self, event_data: Dict) -> str: ...
+    def chat_stream_to_text(self, event_data: Dict) -> str:
+        ...
 
     @abstractmethod
-    def is_chat_stream_end(self, event_data: Dict) -> bool: ...
+    def is_chat_stream_end(self, event_data: Dict) -> bool:
+        ...
 
     @abstractmethod
-    def chat_generation_info(self, response: Any) -> Dict[str, Any]: ...
+    def chat_generation_info(self, response: Any) -> Dict[str, Any]:
+        ...
 
     @abstractmethod
-    def chat_stream_generation_info(self, event_data: Dict) -> Dict[str, Any]: ...
+    def chat_stream_generation_info(self, event_data: Dict) -> Dict[str, Any]:
+        ...
 
     @abstractmethod
-    def chat_tool_calls(self, response: Any) -> List[Any]: ...
+    def chat_tool_calls(self, response: Any) -> List[Any]:
+        ...
 
     @abstractmethod
-    def chat_stream_tool_calls(self, event_data: Dict) -> List[Any]: ...
+    def chat_stream_tool_calls(self, event_data: Dict) -> List[Any]:
+        ...
 
     @abstractmethod
-    def format_response_tool_calls(self, tool_calls: List[Any]) -> List[Any]: ...
+    def format_response_tool_calls(self, tool_calls: List[Any]) -> List[Any]:
+        ...
 
     @abstractmethod
-    def format_stream_tool_calls(self, tool_calls: List[Any]) -> List[Any]: ...
+    def format_stream_tool_calls(self, tool_calls: List[Any]) -> List[Any]:
+        ...
 
     @abstractmethod
-    def get_role(self, message: BaseMessage) -> str: ...
+    def get_role(self, message: BaseMessage) -> str:
+        ...
 
     @abstractmethod
-    def messages_to_oci_params(
-        self, messages: Any, **kwargs: Any
-    ) -> Dict[str, Any]: ...
+    def messages_to_oci_params(self, messages: Any, **kwargs: Any) -> Dict[str, Any]:
+        ...
 
     @abstractmethod
     def convert_to_oci_tool(
         self,
         tool: Union[Union[Dict[str, Any], Type[BaseModel], Callable, BaseTool]],
-    ) -> Dict[str, Any]: ...
+    ) -> Dict[str, Any]:
+        ...
 
     @abstractmethod
     def process_tool_choice(
@@ -144,18 +155,21 @@ class Provider(ABC):
         tool_choice: Optional[
             Union[dict, str, Literal["auto", "none", "required", "any"], bool]
         ],
-    ) -> Optional[Any]: ...
+    ) -> Optional[Any]:
+        ...
 
     @abstractmethod
     def process_stream_tool_calls(
         self,
         event_data: Dict,
         tool_call_ids: Set[str],
-    ) -> List[ToolCallChunk]: ...
+    ) -> List[ToolCallChunk]:
+        ...
 
 
 class CohereProvider(Provider):
     """Cohere provider."""
+
     stop_sequence_key: str = "stop_sequences"
 
     def __init__(self) -> None:
@@ -228,7 +242,8 @@ class CohereProvider(Provider):
         return event_data.get("toolCalls", [])
 
     def format_response_tool_calls(
-        self, tool_calls: Optional[List[Any]] = None,
+        self,
+        tool_calls: Optional[List[Any]] = None,
     ) -> List[Dict]:
         """
         Formats a OCI GenAI API Cohere response into the tool call format used in Langchain.
@@ -441,13 +456,15 @@ class CohereProvider(Provider):
             )
         return None
 
-    def process_stream_tool_calls(self, event_data: Dict, tool_call_ids: Set[str]) -> List[Any]:
+    def process_stream_tool_calls(
+        self, event_data: Dict, tool_call_ids: Set[str]
+    ) -> List[Any]:
         """Process Cohere stream tool calls from event data and return tool call chunks.
-        
+
         Args:
             event_data: The event data from the stream
             tool_call_ids: Set of existing tool call IDs for index tracking
-            
+
         Returns:
             List of ToolCallChunk objects
         """
@@ -467,7 +484,7 @@ class CohereProvider(Provider):
                     name=tool_call["function"].get("name"),
                     args=tool_call["function"].get("arguments"),
                     id=tool_id,
-                    index=len(tool_call_ids) - 1, # index tracking
+                    index=len(tool_call_ids) - 1,  # index tracking
                 )
             )
         return tool_call_chunks
@@ -475,6 +492,7 @@ class CohereProvider(Provider):
 
 class MetaProvider(Provider):
     """Meta provider."""
+
     stop_sequence_key: str = "stop"
 
     def __init__(self) -> None:
@@ -569,7 +587,8 @@ class MetaProvider(Provider):
         return formatted_tool_calls
 
     def format_stream_tool_calls(
-        self, tool_calls: Optional[List[Any]] = None,
+        self,
+        tool_calls: Optional[List[Any]] = None,
     ) -> List[Dict]:
         """
         Formats a OCI GenAI API Meta stream response into the tool call format used in Langchain.
@@ -835,13 +854,15 @@ class MetaProvider(Provider):
             f"Received: {tool_choice}"
         )
 
-    def process_stream_tool_calls(self, event_data: Dict, tool_call_ids: Set[str]) -> List[Any]:
+    def process_stream_tool_calls(
+        self, event_data: Dict, tool_call_ids: Set[str]
+    ) -> List[Any]:
         """Process OCI Gen AI Meta stream tool calls from event data and return tool call chunks.
-        
+
         Args:
             event_data: The event data from the stream
             tool_call_ids: Set of existing tool call IDs for index tracking
-            
+
         Returns:
             List of ToolCallChunk objects
         """
@@ -861,7 +882,7 @@ class MetaProvider(Provider):
                     name=tool_call["function"].get("name"),
                     args=tool_call["function"].get("arguments"),
                     id=tool_id,
-                    index=len(tool_call_ids) - 1, # index tracking
+                    index=len(tool_call_ids) - 1,  # index tracking
                 )
             )
         return tool_call_chunks
@@ -1042,7 +1063,9 @@ class ChatOCIGenAI(BaseChatModel, OCIGenAIBase):
         self,
         schema: Optional[Union[Dict, Type[BaseModel]]] = None,
         *,
-        method: Literal["function_calling", "json_schema", "json_mode"] = "function_calling",
+        method: Literal[
+            "function_calling", "json_schema", "json_mode"
+        ] = "function_calling",
         include_raw: bool = False,
         **kwargs: Any,
     ) -> Runnable[LanguageModelInput, Union[Dict, BaseModel]]:
@@ -1222,8 +1245,6 @@ class ChatOCIGenAI(BaseChatModel, OCIGenAIBase):
             llm_output=llm_output,
         )
 
-    
-
     def _stream(
         self,
         messages: List[BaseMessage],
@@ -1238,12 +1259,14 @@ class ChatOCIGenAI(BaseChatModel, OCIGenAIBase):
 
         for event in response.data.events():
             event_data = json.loads(event.data)
-            
+
             if not self._provider.is_chat_stream_end(event_data):
                 # Process streaming content
                 delta = self._provider.chat_stream_to_text(event_data)
-                tool_call_chunks = self._provider.process_stream_tool_calls(event_data, tool_call_ids)
-                
+                tool_call_chunks = self._provider.process_stream_tool_calls(
+                    event_data, tool_call_ids
+                )
+
                 chunk = ChatGenerationChunk(
                     message=AIMessageChunk(
                         content=delta,
@@ -1260,5 +1283,5 @@ class ChatOCIGenAI(BaseChatModel, OCIGenAIBase):
                         content="",
                         additional_kwargs=generation_info,
                     ),
-                    generation_info=generation_info
+                    generation_info=generation_info,
                 )
