@@ -1042,7 +1042,7 @@ class ChatOCIGenAI(BaseChatModel, OCIGenAIBase):
         self,
         schema: Optional[Union[Dict, Type[BaseModel]]] = None,
         *,
-        method: Literal["function_calling", "json_mode"] = "function_calling",
+        method: Literal["function_calling", "json_schema", "json_mode"] = "function_calling",
         include_raw: bool = False,
         **kwargs: Any,
     ) -> Runnable[LanguageModelInput, Union[Dict, BaseModel]]:
