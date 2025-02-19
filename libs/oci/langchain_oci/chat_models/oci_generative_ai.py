@@ -1137,7 +1137,7 @@ class ChatOCIGenAI(BaseChatModel, OCIGenAIBase):
         else:
             raise ValueError(
                 f"Unrecognized method argument. "
-                f"Expected `function_calling` or `json_mode`."
+                f"Expected `function_calling`, `json_schema` or `json_mode`."
                 f"Received: `{method}`."
             )
         if include_raw:
