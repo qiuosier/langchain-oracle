@@ -246,7 +246,8 @@ class CohereProvider(Provider):
         tool_calls: Optional[List[Any]] = None,
     ) -> List[Dict]:
         """
-        Formats a OCI GenAI API Cohere response into the tool call format used in Langchain.
+        Formats a OCI GenAI API Cohere response
+        into the tool call format used in Langchain.
         """
         if not tool_calls:
             return []
@@ -267,7 +268,8 @@ class CohereProvider(Provider):
 
     def format_stream_tool_calls(self, tool_calls: List[Any]) -> List[Dict]:
         """
-        Formats a OCI GenAI API Cohere stream response into the tool call format used in Langchain.
+        Formats a OCI GenAI API Cohere stream response
+        into the tool call format used in Langchain.
         """
         if not tool_calls:
             return []
@@ -566,7 +568,8 @@ class MetaProvider(Provider):
 
     def format_response_tool_calls(self, tool_calls: List[Any]) -> List[Dict]:
         """
-        Formats a OCI GenAI API Meta response into the tool call format used in Langchain.
+        Formats a OCI GenAI API Meta response
+        into the tool call format used in Langchain.
         """
 
         if not tool_calls:
@@ -591,7 +594,8 @@ class MetaProvider(Provider):
         tool_calls: Optional[List[Any]] = None,
     ) -> List[Dict]:
         """
-        Formats a OCI GenAI API Meta stream response into the tool call format used in Langchain.
+        Formats a OCI GenAI API Meta stream response
+        into the tool call format used in Langchain.
         """
         if not tool_calls:
             return []
@@ -857,7 +861,8 @@ class MetaProvider(Provider):
     def process_stream_tool_calls(
         self, event_data: Dict, tool_call_ids: Set[str]
     ) -> List[Any]:
-        """Process OCI Gen AI Meta stream tool calls from event data and return tool call chunks.
+        """Process OCI Gen AI Meta stream tool calls
+           from event data and return tool call chunks.
 
         Args:
             event_data: The event data from the stream

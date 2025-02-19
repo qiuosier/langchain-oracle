@@ -85,18 +85,18 @@ def test_llm_chat(monkeypatch: MonkeyPatch, test_model_id: str) -> None:
                                                                     "text": response_text,  # noqa: E501
                                                                 }
                                                             )
-                                                        ], 
+                                                        ],
                                                         "tool_calls": [
                                                             MockResponseDict(
                                                                 {
                                                                     "type": "function",
                                                                     "id": "call_123",
                                                                     "function": {
-                                                                        "name": "get_weather",
-                                                                    }
+                                                                        "name": "get_weather",  # noqa: E501
+                                                                    },
                                                                 }
                                                             )
-                                                        ]
+                                                        ],
                                                     }
                                                 ),
                                                 "finish_reason": "completed",
@@ -138,9 +138,6 @@ def test_meta_tool_calling(monkeypatch: MonkeyPatch) -> None:
     llm = ChatOCIGenAI(model_id="meta.llama-3-70b-instruct", client=oci_gen_ai_client)
 
     def mocked_response(*args, **kwargs):  # type: ignore[no-untyped-def]
-        # Verify tool choice is correctly set in request
-        request = args[0]
-        
         # Mock response with tool calls
         return MockResponseDict(
             {
@@ -157,7 +154,7 @@ def test_meta_tool_calling(monkeypatch: MonkeyPatch) -> None:
                                                     "content": [
                                                         MockResponseDict(
                                                             {
-                                                                "text": "Let me help you with that.",
+                                                                "text": "Let me help you with that.",  # noqa: E501
                                                             }
                                                         )
                                                     ],
@@ -167,8 +164,8 @@ def test_meta_tool_calling(monkeypatch: MonkeyPatch) -> None:
                                                                 "type": "function",
                                                                 "id": "call_456",
                                                                 "function": {
-                                                                    "name": "get_weather",
-                                                                    "arguments": '{"location": "San Francisco"}',
+                                                                    "name": "get_weather",  # noqa: E501
+                                                                    "arguments": '{"location": "San Francisco"}',  # noqa: E501
                                                                 },
                                                             }
                                                         )
@@ -215,7 +212,7 @@ def test_meta_tool_calling(monkeypatch: MonkeyPatch) -> None:
             tools=[get_weather],
             tool_choice=tool_choice,
         ).invoke(messages)
-        
+
         assert response.content == "Let me help you with that."
         if tool_choice not in ["none", False]:
             assert response.additional_kwargs.get("tool_calls") is not None
@@ -237,7 +234,9 @@ def test_cohere_tool_choice_validation(monkeypatch: MonkeyPatch) -> None:
     messages = [HumanMessage(content="What's the weather like?")]
 
     # Test that tool choice raises ValueError
-    with pytest.raises(ValueError, match="Tool choice is not supported for Cohere models"):
+    with pytest.raises(
+        ValueError, match="Tool choice is not supported for Cohere models"
+    ):
         llm.bind_tools(
             tools=[get_weather],
             tool_choice="auto",
@@ -281,12 +280,11 @@ def test_cohere_tool_choice_validation(monkeypatch: MonkeyPatch) -> None:
 def test_meta_tool_conversion(monkeypatch: MonkeyPatch) -> None:
     """Test tool conversion for Meta models."""
     from pydantic import BaseModel, Field
-    
+
     oci_gen_ai_client = MagicMock()
     llm = ChatOCIGenAI(model_id="meta.llama-3-70b-instruct", client=oci_gen_ai_client)
 
     def mocked_response(*args, **kwargs):  # type: ignore[no-untyped-def]
-        
         return MockResponseDict(
             {
                 "status": 200,
@@ -327,7 +325,7 @@ def test_meta_tool_conversion(monkeypatch: MonkeyPatch) -> None:
     # Test function tool
     def function_tool(x: int) -> int:
         """A simple function tool.
-        
+
         Args:
             x: Input number
         """
@@ -336,9 +334,9 @@ def test_meta_tool_conversion(monkeypatch: MonkeyPatch) -> None:
     # Test pydantic tool
     class PydanticTool(BaseModel):
         """A simple pydantic tool."""
+
         x: int = Field(description="Input number")
         y: str = Field(description="Input string")
-
 
     messages = [HumanMessage(content="Test message")]
 
@@ -348,3 +346,178 @@ def test_meta_tool_conversion(monkeypatch: MonkeyPatch) -> None:
     ).invoke(messages)
 
     assert response.content == "Response"
+
+
+@pytest.mark.requires("oci")
+def test_json_mode_output(monkeypatch: MonkeyPatch) -> None:
+    """Test JSON mode output parsing."""
+    from pydantic import BaseModel, Field
+
+    class WeatherResponse(BaseModel):
+        temperature: float = Field(description="Temperature in Celsius")
+        conditions: str = Field(description="Weather conditions")
+
+    oci_gen_ai_client = MagicMock()
+    llm = ChatOCIGenAI(model_id="cohere.command-r-16k", client=oci_gen_ai_client)
+
+    def mocked_response(*args, **kwargs):  # type: ignore[no-untyped-def]
+        return MockResponseDict(
+            {
+                "status": 200,
+                "data": MockResponseDict(
+                    {
+                        "chat_response": MockResponseDict(
+                            {
+                                "text": '{"temperature": 25.5, "conditions": "Sunny"}',
+                                "finish_reason": "completed",
+                                "is_search_required": None,
+                                "search_queries": None,
+                                "citations": None,
+                                "documents": None,
+                                "tool_calls": None,
+                            }
+                        ),
+                        "model_id": "cohere.command-r-16k",
+                        "model_version": "1.0.0",
+                    }
+                ),
+                "request_id": "1234567890",
+                "headers": MockResponseDict({"content-length": "123"}),
+            }
+        )
+
+    monkeypatch.setattr(llm.client, "chat", mocked_response)
+
+    messages = [HumanMessage(content="What's the weather like?")]
+
+    # Test with pydantic model
+    structured_llm = llm.with_structured_output(WeatherResponse, method="json_mode")
+    response = structured_llm.invoke(messages)
+    assert isinstance(response, WeatherResponse)
+    assert response.temperature == 25.5
+    assert response.conditions == "Sunny"
+
+
+@pytest.mark.requires("oci")
+def test_json_schema_output(monkeypatch: MonkeyPatch) -> None:
+    """Test JSON schema output parsing."""
+    from pydantic import BaseModel, Field
+
+    class WeatherResponse(BaseModel):
+        temperature: float = Field(description="Temperature in Celsius")
+        conditions: str = Field(description="Weather conditions")
+
+    oci_gen_ai_client = MagicMock()
+    llm = ChatOCIGenAI(model_id="cohere.command-r-16k", client=oci_gen_ai_client)
+
+    def mocked_response(*args, **kwargs):  # type: ignore[no-untyped-def]
+        # Verify that response_format contains the schema
+        request = args[0]
+        assert request.response_format["type"] == "JSON_OBJECT"
+        assert "schema" in request.response_format
+
+        return MockResponseDict(
+            {
+                "status": 200,
+                "data": MockResponseDict(
+                    {
+                        "chat_response": MockResponseDict(
+                            {
+                                "text": '{"temperature": 25.5, "conditions": "Sunny"}',
+                                "finish_reason": "completed",
+                                "is_search_required": None,
+                                "search_queries": None,
+                                "citations": None,
+                                "documents": None,
+                                "tool_calls": None,
+                            }
+                        ),
+                        "model_id": "cohere.command-r-16k",
+                        "model_version": "1.0.0",
+                    }
+                ),
+                "request_id": "1234567890",
+                "headers": MockResponseDict({"content-length": "123"}),
+            }
+        )
+
+    monkeypatch.setattr(llm.client, "chat", mocked_response)
+
+    messages = [HumanMessage(content="What's the weather like?")]
+
+    # Test with pydantic model using json_schema method
+    structured_llm = llm.with_structured_output(WeatherResponse, method="json_schema")
+    response = structured_llm.invoke(messages)
+    assert isinstance(response, WeatherResponse)
+    assert response.temperature == 25.5
+    assert response.conditions == "Sunny"
+
+
+@pytest.mark.requires("oci")
+def test_auth_file_location(monkeypatch: MonkeyPatch) -> None:
+    """Test custom auth file location."""
+    from unittest.mock import patch
+
+    with patch("oci.config.from_file") as mock_from_file:
+        custom_config_path = "/custom/path/config"
+        ChatOCIGenAI(
+            model_id="cohere.command-r-16k", auth_file_location=custom_config_path
+        )
+        mock_from_file.assert_called_once_with(
+            file_location=custom_config_path, profile_name="DEFAULT"
+        )
+
+
+@pytest.mark.requires("oci")
+def test_include_raw_output(monkeypatch: MonkeyPatch) -> None:
+    """Test include_raw parameter in structured output."""
+    from pydantic import BaseModel, Field
+
+    class WeatherResponse(BaseModel):
+        temperature: float = Field(description="Temperature in Celsius")
+        conditions: str = Field(description="Weather conditions")
+
+    oci_gen_ai_client = MagicMock()
+    llm = ChatOCIGenAI(model_id="cohere.command-r-16k", client=oci_gen_ai_client)
+
+    def mocked_response(*args, **kwargs):  # type: ignore[no-untyped-def]
+        return MockResponseDict(
+            {
+                "status": 200,
+                "data": MockResponseDict(
+                    {
+                        "chat_response": MockResponseDict(
+                            {
+                                "text": '{"temperature": 25.5, "conditions": "Sunny"}',
+                                "finish_reason": "completed",
+                                "is_search_required": None,
+                                "search_queries": None,
+                                "citations": None,
+                                "documents": None,
+                                "tool_calls": None,
+                            }
+                        ),
+                        "model_id": "cohere.command-r-16k",
+                        "model_version": "1.0.0",
+                    }
+                ),
+                "request_id": "1234567890",
+                "headers": MockResponseDict({"content-length": "123"}),
+            }
+        )
+
+    monkeypatch.setattr(llm.client, "chat", mocked_response)
+
+    messages = [HumanMessage(content="What's the weather like?")]
+
+    # Test with include_raw=True
+    structured_llm = llm.with_structured_output(
+        WeatherResponse, method="json_schema", include_raw=True
+    )
+    response = structured_llm.invoke(messages)
+    assert isinstance(response, dict)
+    assert "parsed" in response
+    assert "raw" in response
+    assert isinstance(response["parsed"], WeatherResponse)
+    assert response["parsed"].temperature == 25.5
+    assert response["parsed"].conditions == "Sunny"
