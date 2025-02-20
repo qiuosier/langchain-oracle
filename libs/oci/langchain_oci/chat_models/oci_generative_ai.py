@@ -80,7 +80,9 @@ class OCIUtils:
         """
         Remove the tool signature and Args section from a tool description.
 
-        The signature is typically prefixed to the description and followed by an Args section.
+        The signature is typically prefixed to the description and followed
+
+        by an Args section.
         """
         description = re.sub(rf"^{name}\(.*?\) -(?:> \w+? -)? ", "", description)
         description = re.sub(r"(?s)(?:\n?\n\s*?)?Args:.*$", "", description)
@@ -164,8 +166,7 @@ class Provider(ABC):
 
     @abstractmethod
     def convert_to_oci_tool(
-        self,
-        tool: Union[Dict[str, Any], Type[BaseModel], Callable, BaseTool]
+        self, tool: Union[Dict[str, Any], Type[BaseModel], Callable, BaseTool]
     ) -> Dict[str, Any]:
         """Convert a tool definition into the provider-specific OCI tool format."""
         ...
@@ -363,7 +364,7 @@ class CohereProvider(Provider):
                     )
                 )
 
-        # Process current turn messages in reverse order until a HumanMessage is encountered
+        # Process current turn messages in reverse order until a HumanMessage
         current_turn = []
         for message in reversed(messages):
             current_turn.append(message)
@@ -412,7 +413,9 @@ class CohereProvider(Provider):
         """
         Convert a tool definition to an OCI tool for Cohere.
 
-        Supports BaseTool instances, JSON schema dictionaries, or Pydantic models/callables.
+        Supports BaseTool instances, JSON schema dictionaries,
+
+        or Pydantic models/callables.
         """
         if isinstance(tool, BaseTool):
             return self.oci_tool(
@@ -684,7 +687,9 @@ class MetaProvider(Provider):
             role = self.get_role(message)
             if isinstance(message, ToolMessage):
                 # For tool messages, wrap the content in a text content object.
-                tool_content = [self.oci_chat_message_text_content(text=str(message.content))]
+                tool_content = [
+                    self.oci_chat_message_text_content(text=str(message.content))
+                ]
                 if message.tool_call_id:
                     oci_message = self.oci_chat_message[role](
                         content=tool_content,
@@ -692,8 +697,10 @@ class MetaProvider(Provider):
                     )
                 else:
                     oci_message = self.oci_chat_message[role](content=tool_content)
-            elif isinstance(message, AIMessage) and message.additional_kwargs.get("tool_calls"):
-                # For assistant messages with tool calls, process content and tool calls.
+            elif isinstance(message, AIMessage) and message.additional_kwargs.get(
+                "tool_calls"
+            ):
+                # Process content and tool calls for assistant messages
                 content = self._process_message_content(message.content)
                 tool_calls = []
                 for tool_call in message.tool_calls:
@@ -748,15 +755,21 @@ class MetaProvider(Provider):
                 if item["type"] == "image_url":
                     processed_content.append(
                         self.oci_chat_message_image_content(
-                            image_url=self.oci_chat_message_image_url(url=item["image_url"]["url"])
+                            image_url=self.oci_chat_message_image_url(
+                                url=item["image_url"]["url"]
+                            )
                         )
                     )
                 elif item["type"] == "text":
-                    processed_content.append(self.oci_chat_message_text_content(text=item["text"]))
+                    processed_content.append(
+                        self.oci_chat_message_text_content(text=item["text"])
+                    )
                 else:
                     raise ValueError(f"Unsupported content type: {item['type']}")
             else:
-                raise ValueError(f"Content items must be str or dict, got: {type(item)}")
+                raise ValueError(
+                    f"Content items must be str or dict, got: {type(item)}"
+                )
         return processed_content
 
     def convert_to_oci_tool(

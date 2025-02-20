@@ -13,3 +13,7 @@ This repository provides LangChain components for various OCI services. It aims 
 ## Installation
 
 You can install the `langchain-oci` package from PyPI.
+
+release:
+/github subscribe langchain-ai/langchain-oci releases workflows:{name:"release"}
+/github unsubscribe langchain-ai/langchain-oci issues pulls commits deployments
