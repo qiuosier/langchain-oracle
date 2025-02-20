@@ -253,10 +253,6 @@ class CohereProvider(Provider):
             "citations": event_data.get("citations"),
             "finish_reason": event_data.get("finishReason"),
         }
-        if self.chat_stream_tool_calls(event_data):
-            generation_info["tool_calls"] = self.format_stream_tool_calls(
-                self.chat_stream_tool_calls(event_data)
-            )
         # Remove keys with None values
         return {k: v for k, v in generation_info.items() if v is not None}
 
