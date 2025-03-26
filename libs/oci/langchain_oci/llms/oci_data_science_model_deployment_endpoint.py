@@ -1,4 +1,4 @@
-# Copyright (c) 2023 Oracle and/or its affiliates.
+# Copyright (c) 2025 Oracle and/or its affiliates.
 # Licensed under the Universal Permissive License v 1.0 as shown at https://oss.oracle.com/licenses/upl/
 
 """LLM for OCI data science model deployment endpoint."""
@@ -30,9 +30,10 @@ from langchain_core.outputs import Generation, GenerationChunk, LLMResult
 from langchain_core.utils import get_from_dict_or_env
 from pydantic import Field, model_validator
 
-# from langchain_community.utilities.requests import Requests
+from langchain_oci.utilities.requests import Requests
 
 logger = logging.getLogger(__name__)
+DEFAULT_INFERENCE_ENDPOINT = "/v1/completions"
 
 
 DEFAULT_TIME_OUT = 300
@@ -82,6 +83,9 @@ class BaseOCIModelDeployment(Serializable):
     max_retries: int = 3
     """Maximum number of retries to make when generating."""
 
+    default_headers: Optional[Dict[str, Any]] = None
+    """The headers to be added to the Model Deployment request."""
+
     @model_validator(mode="before")
     @classmethod
     def validate_environment(cls, values: Dict) -> Dict:
@@ -121,22 +125,25 @@ class BaseOCIModelDeployment(Serializable):
         Returns:
             Dict: A dictionary containing the appropriate headers for the request.
         """
+        headers = self.default_headers or {}
         if is_async:
             signer = self.auth["signer"]
             _req = requests.Request("POST", self.endpoint, json=body)
             req = _req.prepare()
             req = signer(req)
-            headers = {}
             for key, value in req.headers.items():
                 headers[key] = value
 
             if self.streaming:
                 headers.update(
-                    {"enable-streaming": "true", "Accept": "text/event-stream"}
+                    {
+                        "enable-streaming": "true",
+                        "Accept": "text/event-stream",
+                    }
                 )
             return headers
 
-        return (
+        headers.update(
             {
                 "Content-Type": DEFAULT_CONTENT_TYPE_JSON,
                 "enable-streaming": "true",
@@ -147,6 +154,8 @@ class BaseOCIModelDeployment(Serializable):
                 "Content-Type": DEFAULT_CONTENT_TYPE_JSON,
             }
         )
+
+        return headers
 
     def completion_with_retry(
         self, run_manager: Optional[CallbackManagerForLLMRun] = None, **kwargs: Any
@@ -377,13 +386,17 @@ class OCIModelDeploymentLLM(BaseLLM, BaseOCIModelDeployment):
 
         .. code-block:: python
 
-            from langchain_community.llms import OCIModelDeploymentLLM
+            from langchain_oci.llms import OCIModelDeploymentLLM
 
             llm = OCIModelDeploymentLLM(
                 endpoint="https://modeldeployment.us-ashburn-1.oci.customer-oci.com/<ocid>/predict",
                 model="odsc-llm",
                 streaming=True,
                 model_kwargs={"frequency_penalty": 1.0},
+                headers={
+                    "route": "/v1/completions",
+                    # other request headers ...
+                }
             )
             llm.invoke("tell me a joke.")
 
@@ -394,7 +407,7 @@ class OCIModelDeploymentLLM(BaseLLM, BaseOCIModelDeployment):
 
         .. code-block:: python
 
-            from langchain_community.llms import OCIModelDeploymentLLM
+            from langchain_oci.llms import OCIModelDeploymentLLM
 
             class MyCutomizedModel(OCIModelDeploymentLLM):
                 def _process_stream_response(self, response_json:dict) -> GenerationChunk:
@@ -421,23 +434,6 @@ class OCIModelDeploymentLLM(BaseLLM, BaseOCIModelDeployment):
     model: str = DEFAULT_MODEL_NAME
     """The name of the model."""
 
-    max_tokens: int = 256
-    """Denotes the number of tokens to predict per generation."""
-
-    temperature: float = 0.2
-    """A non-negative float that tunes the degree of randomness in generation."""
-
-    k: int = -1
-    """Number of most likely tokens to consider at each step."""
-
-    p: float = 0.75
-    """Total probability mass of tokens to consider at each step."""
-
-    best_of: int = 1
-    """Generates best_of completions server-side and returns the "best"
-    (the one with the highest log probability per token).
-    """
-
     stop: Optional[List[str]] = None
     """Stop words to use when generating. Model output is cut off
     at the first occurrence of any of these substrings."""
@@ -454,14 +450,9 @@ class OCIModelDeploymentLLM(BaseLLM, BaseOCIModelDeployment):
     def _default_params(self) -> Dict[str, Any]:
         """Get the default parameters."""
         return {
-            "best_of": self.best_of,
-            "max_tokens": self.max_tokens,
             "model": self.model,
             "stop": self.stop,
             "stream": self.streaming,
-            "temperature": self.temperature,
-            "top_k": self.k,
-            "top_p": self.p,
         }
 
     @property
@@ -471,6 +462,25 @@ class OCIModelDeploymentLLM(BaseLLM, BaseOCIModelDeployment):
         return {
             **{"endpoint": self.endpoint, "model_kwargs": _model_kwargs},
             **self._default_params,
+        }
+
+    def _headers(
+        self, is_async: Optional[bool] = False, body: Optional[dict] = None
+    ) -> Dict:
+        """Construct and return the headers for a request.
+
+        Args:
+            is_async (bool, optional): Indicates if the request is asynchronous.
+                Defaults to `False`.
+            body (optional): The request body to be included in the headers if
+                the request is asynchronous.
+
+        Returns:
+            Dict: A dictionary containing the appropriate headers for the request.
+        """
+        return {
+            "route": DEFAULT_INFERENCE_ENDPOINT,
+            **super()._headers(is_async=is_async, body=body),
         }
 
     def _generate(
@@ -744,7 +754,7 @@ class OCIModelDeploymentTGI(OCIModelDeploymentLLM):
     Example:
         .. code-block:: python
 
-            from langchain_community.llms import OCIModelDeploymentTGI
+            from langchain_oci.llms import OCIModelDeploymentTGI
 
             llm = OCIModelDeploymentTGI(
                 endpoint="https://modeldeployment.<region>.oci.customer-oci.com/<md_ocid>/predict",
@@ -755,6 +765,22 @@ class OCIModelDeploymentTGI(OCIModelDeploymentLLM):
                 # other model parameters ...
             )
 
+    """
+    max_tokens: int = 256
+    """Denotes the number of tokens to predict per generation."""
+
+    temperature: float = 0.2
+    """A non-negative float that tunes the degree of randomness in generation."""
+
+    k: int = -1
+    """Number of most likely tokens to consider at each step."""
+
+    p: float = 0.75
+    """Total probability mass of tokens to consider at each step."""
+
+    best_of: int = 1
+    """Generates best_of completions server-side and returns the "best"
+    (the one with the highest log probability per token).
     """
 
     api: Literal["/generate", "/v1/completions"] = "/v1/completions"
@@ -876,7 +902,7 @@ class OCIModelDeploymentVLLM(OCIModelDeploymentLLM):
     Example:
         .. code-block:: python
 
-            from langchain_community.llms import OCIModelDeploymentVLLM
+            from langchain_oci.llms import OCIModelDeploymentVLLM
 
             llm = OCIModelDeploymentVLLM(
                 endpoint="https://modeldeployment.<region>.oci.customer-oci.com/<md_ocid>/predict",
@@ -889,6 +915,19 @@ class OCIModelDeploymentVLLM(OCIModelDeploymentLLM):
                 # other model parameters
             )
 
+    """
+    max_tokens: int = 256
+    """Denotes the number of tokens to predict per generation."""
+
+    temperature: float = 0.2
+    """A non-negative float that tunes the degree of randomness in generation."""
+
+    p: float = 0.75
+    """Total probability mass of tokens to consider at each step."""
+
+    best_of: int = 1
+    """Generates best_of completions server-side and returns the "best"
+    (the one with the highest log probability per token).
     """
 
     n: int = 1
