@@ -20,6 +20,42 @@ llm = ChatOCIGenAI()
 llm.invoke("Sing a ballad of LangChain.")
 ```
 
+You may also instantiate the model with the generic `ChatOCIModelDeployment` or framework specific class like `ChatOCIModelDeploymentVLLM`.
+
+```python
+from langchain_oci.chat_models import ChatOCIModelDeployment, ChatOCIModelDeploymentVLLM
+
+# Create an instance of OCI Model Deployment Endpoint
+# Replace the endpoint uri with your own
+endpoint = "https://modeldeployment.<region>.oci.customer-oci.com/<ocid>/predict"
+
+messages = [
+    (
+        "system",
+        "You are a helpful assistant that translates English to French. Translate the user sentence.",
+    ),
+    ("human", "I love programming."),
+]
+
+chat = ChatOCIModelDeployment(
+    endpoint=endpoint,
+    streaming=True,
+    max_retries=1,
+    model_kwargs={
+        "temperature": 0.2,
+        "max_tokens": 512,
+    },  # other model params...
+    default_headers={
+        "route": "/v1/chat/completions",
+        # other request headers ...
+    },
+)
+chat.invoke(messages)
+
+chat_vllm = ChatOCIModelDeploymentVLLM(endpoint=endpoint)
+chat_vllm.invoke(messages)
+```
+
 ## Embeddings
 
 `OCIGenAIEmbeddings` class exposes embeddings from OCI Generative AI.
@@ -31,6 +67,26 @@ embeddings = OCIGenAIEmbeddings()
 embeddings.embed_query("What is the meaning of life?")
 ```
 
+You may also instantiate the model with the `OCIModelDeploymentEndpointEmbeddings`.
+
+```python
+from langchain_oci.embeddings import OCIModelDeploymentEndpointEmbeddings
+
+# Create an instance of OCI Model Deployment Endpoint
+# Replace the endpoint uri with your own
+endpoint = "https://modeldeployment.<region>.oci.customer-oci.com/<ocid>/predict"
+
+embeddings = OCIModelDeploymentEndpointEmbeddings(
+    endpoint=endpoint,
+)
+
+query = "Hello World!"
+embeddings.embed_query(query)
+
+documents = ["This is a sample document", "and here is another one"]
+embeddings.embed_documents(documents)
+```
+
 ## LLMs
 `OCIGenAI` class exposes LLMs from OCI Generative AI.
 
@@ -39,4 +95,25 @@ from langchain_oci import OCIGenAI
 
 llm = OCIGenAI()
 llm.invoke("The meaning of life is")
+```
+
+You may also instantiate the model with `OCIModelDeploymentLLM` or `OCIModelDeploymentVLLM`.
+
+```python
+from langchain_oci.llms import OCIModelDeploymentLLM, OCIModelDeploymentVLLM
+
+# Create an instance of OCI Model Deployment Endpoint
+# Replace the endpoint uri and model name with your own
+endpoint = "https://modeldeployment.<region>.oci.customer-oci.com/<ocid>/predict"
+
+llm = OCIModelDeploymentLLM(
+    endpoint=endpoint,
+    model="odsc-llm",
+)
+llm.invoke("Who is the first president of United States?")
+
+vllm = OCIModelDeploymentVLLM(
+    endpoint=endpoint,
+)
+vllm.invoke("Who is the first president of United States?")
 ```
