@@ -11,6 +11,8 @@ All integrations in this package assume that you have the credentials setup to c
 
 ## Chat Models
 
+### OCI Generative AI
+
 `ChatOCIGenAI` class exposes chat models from OCI Generative AI.
 
 ```python
@@ -20,7 +22,9 @@ llm = ChatOCIGenAI()
 llm.invoke("Sing a ballad of LangChain.")
 ```
 
-You may also instantiate the model with the generic `ChatOCIModelDeployment` or framework specific class like `ChatOCIModelDeploymentVLLM`.
+### OCI Data Science
+
+You may also instantiate the OCI Data Science model with the generic `ChatOCIModelDeployment` or framework specific class like `ChatOCIModelDeploymentVLLM`.
 
 ```python
 from langchain_oci.chat_models import ChatOCIModelDeployment, ChatOCIModelDeploymentVLLM
@@ -58,6 +62,8 @@ chat_vllm.invoke(messages)
 
 ## Embeddings
 
+### OCI Generative AI
+
 `OCIGenAIEmbeddings` class exposes embeddings from OCI Generative AI.
 
 ```python
@@ -67,7 +73,9 @@ embeddings = OCIGenAIEmbeddings()
 embeddings.embed_query("What is the meaning of life?")
 ```
 
-You may also instantiate the model with the `OCIModelDeploymentEndpointEmbeddings`.
+### OCI Data Science
+
+You may also instantiate the OCI Data Science model with the `OCIModelDeploymentEndpointEmbeddings`.
 
 ```python
 from langchain_oci.embeddings import OCIModelDeploymentEndpointEmbeddings
@@ -88,6 +96,9 @@ embeddings.embed_documents(documents)
 ```
 
 ## LLMs
+
+### OCI Generative AI
+
 `OCIGenAI` class exposes LLMs from OCI Generative AI.
 
 ```python
@@ -97,7 +108,9 @@ llm = OCIGenAI()
 llm.invoke("The meaning of life is")
 ```
 
-You may also instantiate the model with `OCIModelDeploymentLLM` or `OCIModelDeploymentVLLM`.
+### OCI Data Science
+
+You may also instantiate the OCI Data Science model with `OCIModelDeploymentLLM` or `OCIModelDeploymentVLLM`.
 
 ```python
 from langchain_oci.llms import OCIModelDeploymentLLM, OCIModelDeploymentVLLM
