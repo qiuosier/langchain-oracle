@@ -13,11 +13,9 @@ license = "UPL"
 [tool.poetry.dependencies]
 python = ">=3.9,<4.0"
 langchain-core = ">=0.3.15,<0.4"
+langchain-openai = ">=0.3.9"
 oci = ">=2.144.0"
-numpy = [
-  { version = "^1", python = "<3.12" },
-  { version = "^1.26.0", python = ">=3.12" },
-]
+oracle-ads = ">=2.13.3"
 pydantic = ">=2,<3"
 
 [tool.poetry.group.test]

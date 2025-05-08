@@ -3,11 +3,13 @@
 
 """LLM for OCI data science model deployment endpoint."""
 
+from contextlib import asynccontextmanager
 import json
 import logging
 import traceback
 from typing import (
     Any,
+    AsyncGenerator,
     AsyncIterator,
     Callable,
     Dict,
@@ -29,8 +31,6 @@ from langchain_core.load.serializable import Serializable
 from langchain_core.outputs import Generation, GenerationChunk, LLMResult
 from langchain_core.utils import get_from_dict_or_env
 from pydantic import Field, model_validator
-
-from langchain_oci.utilities.requests import Requests
 
 logger = logging.getLogger(__name__)
 DEFAULT_INFERENCE_ENDPOINT = "/v1/completions"
@@ -169,15 +169,18 @@ class BaseOCIModelDeployment(Serializable):
                 request_timeout = kwargs.pop("request_timeout", DEFAULT_TIME_OUT)
                 data = kwargs.pop("data")
                 stream = kwargs.pop("stream", self.streaming)
+                headers = self._headers()
+                auth = self.auth.get("signer")
+                url = self.endpoint
 
-                request = Requests(
-                    headers=self._headers(), auth=self.auth.get("signer")
-                )
-                response = request.post(
-                    url=self.endpoint,
-                    data=data,
+                response = requests.post(
+                    url=url,
+                    json=data,
                     timeout=request_timeout,
                     stream=stream,
+                    headers=headers,
+                    auth=auth,
+                    verify=True,
                     **kwargs,
                 )
                 self._check_response(response)
@@ -211,20 +214,29 @@ class BaseOCIModelDeployment(Serializable):
                 request_timeout = kwargs.pop("request_timeout", DEFAULT_TIME_OUT)
                 data = kwargs.pop("data")
                 stream = kwargs.pop("stream", self.streaming)
+                headers = self._headers(is_async=True, body=data)
+                auth = self.auth.get("signer")
+                url = self.endpoint
+                method = "POST"
 
-                request = Requests(headers=self._headers(is_async=True, body=data))
                 if stream:
-                    response = request.apost(
-                        url=self.endpoint,
-                        data=data,
+                    response = self._arequest(
+                        method=method,
+                        url=url,
+                        json=data,
                         timeout=request_timeout,
+                        headers=headers,
+                        auth=auth,
                     )
                     return self._aiter_sse(response)
                 else:
-                    async with request.apost(
-                        url=self.endpoint,
-                        data=data,
+                    async with self._arequest(
+                        method=method,
+                        url=url,
+                        json=data,
                         timeout=request_timeout,
+                        headers=headers,
+                        auth=auth,
                     ) as resp:
                         self._check_response(resp)
                         data = await resp.json()
@@ -243,6 +255,21 @@ class BaseOCIModelDeployment(Serializable):
                 ) from err
 
         return await _completion_with_retry(**kwargs)
+
+    @asynccontextmanager
+    async def _arequest(
+        self, method: str, url: str, headers: dict, auth: Any, **kwargs: Any
+    ) -> AsyncGenerator[aiohttp.ClientResponse, None]:
+        """Make an async request."""
+        async with aiohttp.ClientSession() as session:
+            async with session.request(
+                method,
+                url,
+                headers=headers,
+                auth=auth,
+                **kwargs,
+            ) as response:
+                yield response
 
     def _check_response(self, response: Any) -> None:
         """Handle server error by checking the response status.

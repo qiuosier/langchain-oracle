@@ -178,7 +178,7 @@ async def mocked_async_streaming_response(
     "ads.common.auth.default_signer", return_value=dict(signer=mock.MagicMock())
 )
 @mock.patch(
-    "langchain_oci.utilities.requests.Requests.apost",
+    "langchain_oci.llms.oci_data_science_model_deployment_endpoint.BaseOCIModelDeployment._arequest",
     mock.MagicMock(),
 )
 async def test_stream_async(*args: Any) -> None:

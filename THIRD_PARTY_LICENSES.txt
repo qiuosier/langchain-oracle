@@ -5,13 +5,18 @@ Oracle Infrastructure Cloud LangChain Plugin for Python Third Party License File
 - MIT License
 - The Universal Permissive License (UPL), Version 1.0
 - Apache License Version 2.0, January 2004
-- BSD License (Copyright (c) 2005-2024, NumPy Developers.)
 
 ======================== Third Party Components ========================
 langchain-core
 * Copyright (c) LangChain, Inc.
 * License: MIT License (MIT)
 * Source code: https://github.com/langchain-ai/langchain/tree/master/libs/core
+* Project home: https://python.langchain.com/docs/introduction/
+
+langchain-openai
+* Copyright (c) LangChain, Inc.
+* License: MIT License (MIT)
+* Source code: https://github.com/langchain-ai/langchain
 * Project home: https://python.langchain.com/docs/introduction/
 
 oci
@@ -21,11 +26,11 @@ oci
 * Source code: https://github.com/oracle/oci-python-sdk
 * Project home: https://docs.oracle.com/en-us/iaas/tools/python/2.148.0/index.html
 
-numpy
-* Copyright (c) 2005-2025, NumPy Developers. All rights reserved.
-* License: BSD License (Copyright (c) 2005-2024, NumPy Developers.)
-* Source code: https://github.com/numpy/numpy
-* Project home: https://numpy.org/
+oracle-ads
+* Copyright (c) 2025, Oracle and/or its affiliates.  All rights reserved.
+* License: The Universal Permissive License (UPL), Version 1.0
+* Source code: https://github.com/oracle/accelerated-data-science
+* Project home: https://accelerated-data-science.readthedocs.io/en/latest/
 
 pydantic
 * Copyright (c) 2017 to present Pydantic Services Inc. and individual contributors.
@@ -58,7 +63,30 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
+--------------------- langchain-openai ----------------------
+MIT License
 
+Copyright (c) LangChain, Inc.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+--------------------- oci ----------------------
 The Universal Permissive License (UPL), Version 1.0
 
 Subject to the condition set forth below, permission is hereby granted to any person obtaining a copy of this software, associated documentation and/or data (collectively the "Software"), free of charge and under any and all copyright rights in the Software, and any and all patent rights owned or freely licensable by each licensor hereunder covering either (i) the unmodified Software as contributed to or provided by such licensor, or (ii) the Larger Works (as defined below), to deal in both
@@ -74,8 +102,6 @@ The above copyright notice and either this complete permission notice or at a mi
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ____________________________
-
---------------------- oci ----------------------
 
 The Apache Software License, Version 2.0
 Copyright (c) 2016, 2018, Oracle and/or its affiliates.  All rights reserved.
@@ -140,38 +166,43 @@ END OF TERMS AND CONDITIONS
    See the License for the specific language governing permissions and
    limitations under the License.
 
---------------------- NumPy ----------------------
+--------------------- oracle-ads ----------------------
 
-   Copyright (c) 2005-2025, NumPy Developers.
-All rights reserved.
+Copyright (c) 2025 Oracle and/or its affiliates.
 
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions are
-met:
+The Universal Permissive License (UPL), Version 1.0
 
-    * Redistributions of source code must retain the above copyright
-       notice, this list of conditions and the following disclaimer.
+Subject to the condition set forth below, permission is hereby granted to any
+person obtaining a copy of this software, associated documentation and/or data
+(collectively the "Software"), free of charge and under any and all copyright
+rights in the Software, and any and all patent rights owned or freely
+licensable by each licensor hereunder covering either (i) the unmodified
+Software as contributed to or provided by such licensor, or (ii) the Larger
+Works (as defined below), to deal in both
 
-    * Redistributions in binary form must reproduce the above
-       copyright notice, this list of conditions and the following
-       disclaimer in the documentation and/or other materials provided
-       with the distribution.
+(a) the Software, and
+(b) any piece of software and/or hardware listed in the lrgrwrks.txt file if
+one is included with the Software (each a "Larger Work" to which the Software
+is contributed by such licensors),
 
-    * Neither the name of the NumPy Developers nor the names of any
-       contributors may be used to endorse or promote products derived
-       from this software without specific prior written permission.
+without restriction, including without limitation the rights to copy, create
+derivative works of, display, perform, and distribute the Software and make,
+use, sell, offer for sale, import, export, have made, and have sold the
+Software and the Larger Work(s), and to sublicense the foregoing rights on
+either these or other terms.
 
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+This license is subject to the following condition:
+The above copyright notice and either this complete permission notice or at
+a minimum a reference to the UPL must be included in all copies or
+substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 
 --------------------- pydantic ----------------------
 
