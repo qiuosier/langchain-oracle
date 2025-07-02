@@ -14,6 +14,21 @@ This repository provides LangChain components for various OCI services. It aims 
 
 You can install the `langchain-oci` package from PyPI.
 
+## Contributing
+
+This project welcomes contributions from the community. Before submitting a pull request, please [review our contribution guide](./CONTRIBUTING.md)
+
+## Security
+
+Please consult the [security guide](./SECURITY.md) for our responsible security vulnerability disclosure process
+
+## License
+
+Copyright (c) 2025 Oracle and/or its affiliates.
+
+Released under the Universal Permissive License v1.0 as shown at
+<https://oss.oracle.com/licenses/upl/>.
+
 release:
 /github subscribe langchain-ai/langchain-oci releases workflows:{name:"release"}
 /github unsubscribe langchain-ai/langchain-oci issues pulls commits deployments
