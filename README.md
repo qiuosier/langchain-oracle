@@ -12,7 +12,7 @@ This repository provides LangChain components for various OCI services. It aims 
 
 ## Installation
 
-You can install the `langchain-oci` package from PyPI.
+You can install the `langchain-oracle` package from PyPI.
 
 ## Contributing
 
