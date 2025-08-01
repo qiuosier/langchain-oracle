@@ -362,6 +362,19 @@ class CohereProvider(Provider):
                         message=msg_content, tool_calls=tool_calls
                     )
                 )
+            elif isinstance(msg, ToolMessage):
+                oci_chat_history.append(
+                    self.oci_chat_message[self.get_role(msg)](
+                        tool_results=[
+                            self.oci_tool_result(
+                                call=self.oci_tool_call(
+                                    name=msg.name, parameters={}
+                                ),
+                                outputs=[{"output": msg.content}],
+                            )
+                        ],
+                    )
+                )
 
         # Process current turn messages in reverse order until a HumanMessage
         current_turn = []
