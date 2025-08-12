@@ -1028,15 +1028,13 @@ class ChatOCIGenAI(BaseChatModel, OCIGenAIBase):
         return {
             "cohere": CohereProvider(),
             "meta": MetaProvider(),
+            "generic": GenericProvider(),
         }
 
     @property
     def _provider(self) -> Any:
         """Get the internal provider object"""
-        return self._get_provider(
-            provider_map=self._provider_map,
-            default=self._default_provider
-        )
+        return self._get_provider(provider_map=self._provider_map)
 
     def _prepare_request(
         self,

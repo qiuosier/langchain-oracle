@@ -205,9 +205,11 @@ class OCIGenAIBase(BaseModel, ABC):
             **{"model_kwargs": _model_kwargs},
         }
 
-    def _get_provider(self, provider_map: Mapping[str, Any], default: Provider) -> Any:
+    def _get_provider(self, provider_map: Mapping[str, Any]) -> Any:
         if self.provider is not None:
             provider = self.provider
+        elif self.model_id.startswith(CUSTOM_ENDPOINT_PREFIX):
+            raise ValueError("provider is required for custom endpoints.")
         else:
             if self.model_id is None:
                 raise ValueError(
@@ -215,17 +217,14 @@ class OCIGenAIBase(BaseModel, ABC):
                     "please provide the provider explicitly or specify "
                     "the model_id to derive the provider."
                 )
-            provider = self.model_id.split(".")[0].lower()
+            provider = provider_map.get(self.model_id.split(".")[0].lower(), "generic")
 
         if provider not in provider_map:
-            if default:
-                return default
             raise ValueError(
                 f"Invalid provider derived from model_id: {self.model_id} "
                 "Please explicitly pass in the supported provider "
                 "when using custom endpoint"
             )
-            return GenericProvider()
         return provider_map[provider]
 
 
@@ -283,15 +282,13 @@ class OCIGenAI(LLM, OCIGenAIBase):
         return {
             "cohere": CohereProvider(),
             "meta": MetaProvider(),
+            "generic": GenericProvider(),
         }
 
     @property
     def _provider(self) -> Any:
         """Get the internal provider object"""
-        return self._get_provider(
-            provider_map=self._provider_map,
-            default=self._default_provider
-        )
+        return self._get_provider(provider_map=self._provider_map)
 
     def _prepare_invocation_object(
         self, prompt: str, stop: Optional[List[str]], kwargs: Dict[str, Any]
