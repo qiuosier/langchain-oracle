@@ -208,15 +208,16 @@ class OCIGenAIBase(BaseModel, ABC):
     def _get_provider(self, provider_map: Mapping[str, Any]) -> Any:
         if self.provider is not None:
             provider = self.provider
+        elif self.model_id is None:
+            raise ValueError(
+                "model_id is required to derive the provider, "
+                "please provide the provider explicitly or specify "
+                "the model_id to derive the provider."
+            )
         elif self.model_id.startswith(CUSTOM_ENDPOINT_PREFIX):
             raise ValueError("provider is required for custom endpoints.")
         else:
-            if self.model_id is None:
-                raise ValueError(
-                    "model_id is required to derive the provider, "
-                    "please provide the provider explicitly or specify "
-                    "the model_id to derive the provider."
-                )
+            
             provider = provider_map.get(self.model_id.split(".")[0].lower(), "generic")
 
         if provider not in provider_map:
