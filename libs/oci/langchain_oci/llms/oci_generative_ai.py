@@ -40,7 +40,8 @@ class CohereProvider(Provider):
         return response.data.inference_response.generated_texts[0].text
 
 
-class MetaProvider(Provider):
+class GenericProvider(Provider):
+    """Provider for models using generic API spec."""
     stop_sequence_key: str = "stop"
 
     def __init__(self) -> None:
@@ -50,6 +51,11 @@ class MetaProvider(Provider):
 
     def completion_response_to_text(self, response: Any) -> str:
         return response.data.inference_response.choices[0].text
+    
+
+class MetaProvider(GenericProvider):
+    """Provider for Meta models. This provider is for backward compatibility."""
+    pass
 
 
 class OCIAuthType(Enum):
@@ -199,7 +205,7 @@ class OCIGenAIBase(BaseModel, ABC):
             **{"model_kwargs": _model_kwargs},
         }
 
-    def _get_provider(self, provider_map: Mapping[str, Any]) -> Any:
+    def _get_provider(self, provider_map: Mapping[str, Any], default: Provider) -> Any:
         if self.provider is not None:
             provider = self.provider
         else:
@@ -212,11 +218,14 @@ class OCIGenAIBase(BaseModel, ABC):
             provider = self.model_id.split(".")[0].lower()
 
         if provider not in provider_map:
+            if default:
+                return default
             raise ValueError(
                 f"Invalid provider derived from model_id: {self.model_id} "
                 "Please explicitly pass in the supported provider "
                 "when using custom endpoint"
             )
+            return GenericProvider()
         return provider_map[provider]
 
 
@@ -262,6 +271,11 @@ class OCIGenAI(LLM, OCIGenAIBase):
     def _llm_type(self) -> str:
         """Return type of llm."""
         return "oci_generative_ai_completion"
+    
+    @property
+    def _default_provider(self) -> Provider:
+        """Default provider for the llm model."""
+        return GenericProvider()
 
     @property
     def _provider_map(self) -> Mapping[str, Any]:
@@ -269,14 +283,15 @@ class OCIGenAI(LLM, OCIGenAIBase):
         return {
             "cohere": CohereProvider(),
             "meta": MetaProvider(),
-            "xai": MetaProvider(),
-            "openai": MetaProvider(),
         }
 
     @property
     def _provider(self) -> Any:
         """Get the internal provider object"""
-        return self._get_provider(provider_map=self._provider_map)
+        return self._get_provider(
+            provider_map=self._provider_map,
+            default=self._default_provider
+        )
 
     def _prepare_invocation_object(
         self, prompt: str, stop: Optional[List[str]], kwargs: Dict[str, Any]

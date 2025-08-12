@@ -545,8 +545,8 @@ class CohereProvider(Provider):
         return tool_call_chunks
 
 
-class MetaProvider(Provider):
-    """Provider implementation for Meta."""
+class GenericProvider(Provider):
+    """Provider for models using generic API spec."""
 
     stop_sequence_key: str = "stop"
 
@@ -934,6 +934,11 @@ class MetaProvider(Provider):
         return tool_call_chunks
 
 
+class MetaProvider(GenericProvider):
+    """Provider for Meta models. This provider is for backward compatibility."""
+    pass
+
+
 class ChatOCIGenAI(BaseChatModel, OCIGenAIBase):
     """ChatOCIGenAI chat model integration.
 
@@ -1011,6 +1016,11 @@ class ChatOCIGenAI(BaseChatModel, OCIGenAIBase):
     def _llm_type(self) -> str:
         """Return the type of the language model."""
         return "oci_generative_ai_chat"
+    
+    @property
+    def _default_provider(self) -> Provider:
+        """Default provider for the chat model."""
+        return GenericProvider()
 
     @property
     def _provider_map(self) -> Mapping[str, Provider]:
@@ -1018,14 +1028,15 @@ class ChatOCIGenAI(BaseChatModel, OCIGenAIBase):
         return {
             "cohere": CohereProvider(),
             "meta": MetaProvider(),
-            "xai": MetaProvider(),
-            "openai": MetaProvider(),
         }
 
     @property
     def _provider(self) -> Any:
         """Get the internal provider object"""
-        return self._get_provider(provider_map=self._provider_map)
+        return self._get_provider(
+            provider_map=self._provider_map,
+            default=self._default_provider
+        )
 
     def _prepare_request(
         self,
