@@ -545,8 +545,8 @@ class CohereProvider(Provider):
         return tool_call_chunks
 
 
-class MetaProvider(Provider):
-    """Provider implementation for Meta."""
+class GenericProvider(Provider):
+    """Provider for models using generic API spec."""
 
     stop_sequence_key: str = "stop"
 
@@ -934,6 +934,11 @@ class MetaProvider(Provider):
         return tool_call_chunks
 
 
+class MetaProvider(GenericProvider):
+    """Provider for Meta models. This provider is for backward compatibility."""
+    pass
+
+
 class ChatOCIGenAI(BaseChatModel, OCIGenAIBase):
     """ChatOCIGenAI chat model integration.
 
@@ -1018,6 +1023,7 @@ class ChatOCIGenAI(BaseChatModel, OCIGenAIBase):
         return {
             "cohere": CohereProvider(),
             "meta": MetaProvider(),
+            "generic": GenericProvider(),
         }
 
     @property
