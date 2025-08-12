@@ -1016,11 +1016,6 @@ class ChatOCIGenAI(BaseChatModel, OCIGenAIBase):
     def _llm_type(self) -> str:
         """Return the type of the language model."""
         return "oci_generative_ai_chat"
-    
-    @property
-    def _default_provider(self) -> Provider:
-        """Default provider for the chat model."""
-        return GenericProvider()
 
     @property
     def _provider_map(self) -> Mapping[str, Provider]:

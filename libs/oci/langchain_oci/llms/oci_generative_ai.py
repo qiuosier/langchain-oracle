@@ -270,11 +270,6 @@ class OCIGenAI(LLM, OCIGenAIBase):
     def _llm_type(self) -> str:
         """Return type of llm."""
         return "oci_generative_ai_completion"
-    
-    @property
-    def _default_provider(self) -> Provider:
-        """Default provider for the llm model."""
-        return GenericProvider()
 
     @property
     def _provider_map(self) -> Mapping[str, Any]:
