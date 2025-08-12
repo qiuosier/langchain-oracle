@@ -269,6 +269,8 @@ class OCIGenAI(LLM, OCIGenAIBase):
         return {
             "cohere": CohereProvider(),
             "meta": MetaProvider(),
+            "xai": MetaProvider(),
+            "openai": MetaProvider(),
         }
 
     @property
