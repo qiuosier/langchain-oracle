@@ -814,9 +814,7 @@ class GenericProvider(Provider):
                     "type": "object",
                     "properties": {
                         p_name: {
-                            "type": JSON_TO_PYTHON_TYPES.get(
-                                p_def.get("type"), p_def.get("type", "string")
-                            ),
+                            "type": p_def.get("type", "any"),
                             "description": p_def.get("description", ""),
                         }
                         for p_name, p_def in tool.args.items()
