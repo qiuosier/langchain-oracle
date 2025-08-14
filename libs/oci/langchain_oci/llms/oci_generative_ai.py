@@ -42,6 +42,7 @@ class CohereProvider(Provider):
 
 class GenericProvider(Provider):
     """Provider for models using generic API spec."""
+
     stop_sequence_key: str = "stop"
 
     def __init__(self) -> None:
@@ -51,10 +52,11 @@ class GenericProvider(Provider):
 
     def completion_response_to_text(self, response: Any) -> str:
         return response.data.inference_response.choices[0].text
-    
+
 
 class MetaProvider(GenericProvider):
     """Provider for Meta models. This provider is for backward compatibility."""
+
     pass
 
 
@@ -217,15 +219,14 @@ class OCIGenAIBase(BaseModel, ABC):
         elif self.model_id.startswith(CUSTOM_ENDPOINT_PREFIX):
             raise ValueError("provider is required for custom endpoints.")
         else:
-            
-            provider = provider_map.get(self.model_id.split(".")[0].lower(), "generic")
+            provider = self.model_id.split(".")[0].lower()
+            # Use generic provider for non-custom endpoint
+            # if provider derived from the model_id is not in the provider map
+            if provider not in provider_map:
+                provider = "generic"
 
         if provider not in provider_map:
-            raise ValueError(
-                f"Invalid provider derived from model_id: {self.model_id} "
-                "Please explicitly pass in the supported provider "
-                "when using custom endpoint"
-            )
+            raise ValueError(f"Invalid provider {provider}.")
         return provider_map[provider]
 
 
