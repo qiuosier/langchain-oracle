@@ -1676,26 +1676,32 @@ def test_perform_search_test() -> None:
         # perform search
         query = "YashB"
 
-        filter = {"id": ["106", "108", "yash"]}
+        db_filter = {
+            "_or": [  # FilterGroup
+                {"key": "id", "oper": "EQ", "value": "106"},
+                {"key": "id", "oper": "EQ", "value": "108"},
+                {"key": "id", "oper": "EQ", "value": "yash"},
+            ]
+        }
 
         # similarity_searh without filter
         vs.similarity_search(query, 2)
 
         # similarity_searh with filter
-        vs.similarity_search(query, 2, filter=filter)
+        vs.similarity_search(query, 2, db_filter=db_filter)
 
         # Similarity search with relevance score
         vs.similarity_search_with_score(query, 2)
 
         # Similarity search with relevance score with filter
-        vs.similarity_search_with_score(query, 2, filter=filter)
+        vs.similarity_search_with_score(query, 2, db_filter=db_filter)
 
         # Max marginal relevance search
         vs.max_marginal_relevance_search(query, 2, fetch_k=20, lambda_mult=0.5)
 
         # Max marginal relevance search with filter
         vs.max_marginal_relevance_search(
-            query, 2, fetch_k=20, lambda_mult=0.5, filter=filter
+            query, 2, fetch_k=20, lambda_mult=0.5, db_filter=db_filter
         )
 
     drop_table_purge(connection, "TB10")
@@ -1762,26 +1768,32 @@ async def test_perform_search_test_async() -> None:
         # perform search
         query = "YashB"
 
-        filter = {"id": ["106", "108", "yash"]}
+        db_filter = {
+            "_or": [  # FilterGroup
+                {"key": "id", "oper": "EQ", "value": "106"},
+                {"key": "id", "oper": "EQ", "value": "108"},
+                {"key": "id", "oper": "EQ", "value": "yash"},
+            ]
+        }
 
         # similarity_searh without filter
         await vs.asimilarity_search(query, 2)
 
         # similarity_searh with filter
-        await vs.asimilarity_search(query, 2, filter=filter)
+        await vs.asimilarity_search(query, 2, db_filter=db_filter)
 
         # Similarity search with relevance score
         await vs.asimilarity_search_with_score(query, 2)
 
         # Similarity search with relevance score with filter
-        await vs.asimilarity_search_with_score(query, 2, filter=filter)
+        await vs.asimilarity_search_with_score(query, 2, db_filter=db_filter)
 
         # Max marginal relevance search
         await vs.amax_marginal_relevance_search(query, 2, fetch_k=20, lambda_mult=0.5)
 
         # Max marginal relevance search with filter
         await vs.amax_marginal_relevance_search(
-            query, 2, fetch_k=20, lambda_mult=0.5, filter=filter
+            query, 2, fetch_k=20, lambda_mult=0.5, db_filter=db_filter
         )
 
     await adrop_table_purge(connection, "TB10")
@@ -1795,6 +1807,19 @@ async def test_perform_search_test_async() -> None:
 ##################################
 ##### perform_filter_search ######
 ##################################
+
+FILTERED_FUNCTIONS = [
+    "similarity_search",
+    "similarity_search_by_vector",
+    "similarity_search_with_score",
+    "similarity_search_by_vector_with_relevance_scores",
+    "similarity_search_by_vector_returning_embeddings",
+    "max_marginal_relevance_search_with_score_by_vector",
+    "max_marginal_relevance_search_by_vector",
+    "max_marginal_relevance_search",
+]
+
+
 def test_db_filter_test() -> None:
     try:
         connection = oracledb.connect(user=username, password=password, dsn=dsn)
@@ -1835,24 +1860,7 @@ def test_db_filter_test() -> None:
         # perform search
         query = "Strawberry"
 
-        filter = {"id": ["bl"]}
         db_filter = {"key": "id", "oper": "EQ", "value": "bl"}  # FilterCondition
-
-        # similarity_search without filter
-        result = vs.similarity_search(query, 1)
-        assert result[0].metadata["id"] == "st"
-
-        # similarity_search with filter
-        result = vs.similarity_search(query, 1, filter=filter)
-        assert len(result) == 0
-
-        # similarity_search with db_filter
-        result = vs.similarity_search(query, 1, db_filter=db_filter)
-        assert result[0].metadata["id"] == "bl"
-
-        # similarity_search with filter and db_filter
-        result = vs.similarity_search(query, 1, filter=filter, db_filter=db_filter)
-        assert result[0].metadata["id"] == "bl"
 
         # nested db filter
         db_filter_nested = {
@@ -1867,9 +1875,27 @@ def test_db_filter_test() -> None:
             ]
         }
 
-        # similarity_search with db_filter
-        result = vs.similarity_search(query, 1, db_filter=db_filter_nested)
-        assert result[0].metadata["id"] == "st"
+        for filtered_function in FILTERED_FUNCTIONS:
+            method = getattr(vs, filtered_function)
+
+            query_emb = query
+            if "_by_vector" in filtered_function:
+                query_emb = vs.embedding_function.embed_query(query)
+
+            # search without filter
+            result = method(query_emb, k=1)
+            result = result[0] if not isinstance(result[0], tuple) else result[0][0]
+            assert result.metadata["id"] == "st"
+
+            # search with filter
+            result = method(query_emb, k=1, db_filter=db_filter)
+            result = result[0] if not isinstance(result[0], tuple) else result[0][0]
+            assert result.metadata["id"] == "bl"
+
+            # search with nested filter
+            result = method(query_emb, k=1, db_filter=db_filter_nested)
+            result = result[0] if not isinstance(result[0], tuple) else result[0][0]
+            assert result.metadata["id"] == "st"
 
         exception_occurred = False
         try:
@@ -1967,27 +1993,7 @@ async def test_db_filter_test_async() -> None:
         # perform search
         query = "Strawberry"
 
-        filter = {"id": ["bl"]}
         db_filter = {"key": "id", "oper": "EQ", "value": "bl"}  # FilterCondition
-
-        # similarity_search without filter
-        result = await vs.asimilarity_search(query, 1)
-        assert result[0].metadata["id"] == "st"
-
-        # similarity_search with filter
-        result = await vs.asimilarity_search(query, 1, filter=filter)
-        assert len(result) == 0
-
-        # similarity_search with db_filter
-        result = await vs.asimilarity_search(query, 1, db_filter=db_filter)
-        assert result[0].metadata["id"] == "bl"
-
-        # similarity_search with filter and db_filter
-        result = await vs.asimilarity_search(
-            query, 1, filter=filter, db_filter=db_filter
-        )
-        assert result[0].metadata["id"] == "bl"
-
         # nested db filter
         db_filter_nested = {
             "_or": [
@@ -2001,9 +2007,27 @@ async def test_db_filter_test_async() -> None:
             ]
         }
 
-        # similarity_search with db_filter
-        result = await vs.asimilarity_search(query, 1, db_filter=db_filter_nested)
-        assert result[0].metadata["id"] == "st"
+        for filtered_function in FILTERED_FUNCTIONS:
+            method = getattr(vs, "a" + filtered_function)
+
+            query_emb = query
+            if "_by_vector" in filtered_function:
+                query_emb = vs.embedding_function.embed_query(query)
+
+            # search without filter
+            result = await method(query_emb, k=1)
+            result = result[0] if not isinstance(result[0], tuple) else result[0][0]
+            assert result.metadata["id"] == "st"
+
+            # search with filter
+            result = await method(query_emb, k=1, db_filter=db_filter)
+            result = result[0] if not isinstance(result[0], tuple) else result[0][0]
+            assert result.metadata["id"] == "bl"
+
+            # search with nested filter
+            result = await method(query_emb, k=1, db_filter=db_filter_nested)
+            result = result[0] if not isinstance(result[0], tuple) else result[0][0]
+            assert result.metadata["id"] == "st"
 
         exception_occurred = False
         try:
@@ -2449,6 +2473,7 @@ def test_quote_identifier() -> None:
     assert _quote_indentifier("--") == '"--"'
     assert _quote_indentifier("U1.table") == '"U1"."table"'
     assert _quote_indentifier("hnsw_idx2") == '"hnsw_idx2"'
+    assert _quote_indentifier("'") == '"\'"'
 
     with pytest.raises(ValueError):
         _quote_indentifier('hnsw_"idx2')

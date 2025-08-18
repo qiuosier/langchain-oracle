@@ -78,22 +78,30 @@ def _convert_oper_to_sql(oper: str) -> str:
     return oper_map.get(oper, "==")
 
 
-def _generate_condition(condition: FilterCondition) -> str:
-    key = condition["key"]
+def _generate_condition(condition: FilterCondition, bind_variables: List[str]) -> str:
+    key = _quote_indentifier(condition["key"])
     oper = _convert_oper_to_sql(condition["oper"])
     value = condition["value"]
-    if isinstance(value, str):
-        value = f'"{value}"'
-    return f"JSON_EXISTS(metadata, '$.{key}?(@ {oper} {value})')"
+
+    value_bind = f":value{len(bind_variables)}"
+    bind_variables.append(value)
+
+    return (
+        f"JSON_EXISTS(metadata, "
+        f"'$.{key}[*]?(@ {oper} $val)' "
+        f'PASSING {value_bind} AS "val")'
+    )
 
 
-def _generate_where_clause(db_filter: Union[FilterCondition, FilterGroup]) -> str:
+def _generate_where_clause(
+    db_filter: FilterCondition | FilterGroup, bind_variables: List[str]
+) -> str:
     if "key" in db_filter:  # identify as FilterCondition
-        return _generate_condition(cast(FilterCondition, db_filter))
+        return _generate_condition(cast(FilterCondition, db_filter), bind_variables)
 
     if "_and" in db_filter and db_filter["_and"] is not None:
         and_conditions = [
-            _generate_where_clause(cond)
+            _generate_where_clause(cond, bind_variables)
             for cond in db_filter["_and"]
             if isinstance(cond, dict)
         ]
@@ -101,7 +109,7 @@ def _generate_where_clause(db_filter: Union[FilterCondition, FilterGroup]) -> st
 
     if "_or" in db_filter and db_filter["_or"] is not None:
         or_conditions = [
-            _generate_where_clause(cond)
+            _generate_where_clause(cond, bind_variables)
             for cond in db_filter["_or"]
             if isinstance(cond, dict)
         ]
@@ -110,7 +118,7 @@ def _generate_where_clause(db_filter: Union[FilterCondition, FilterGroup]) -> st
     raise ValueError(f"Invalid filter structure: {db_filter}")
 
 
-def _get_connection(client: Any) -> Connection | None:
+def _get_connection(client: Any) -> Optional[Connection]:
     # check if ConnectionPool exists
     connection_pool_class = getattr(oracledb, "ConnectionPool", None)
 
@@ -127,7 +135,7 @@ def _get_connection(client: Any) -> Connection | None:
         )
 
 
-async def _aget_connection(client: Any) -> AsyncConnection | None:
+async def _aget_connection(client: Any) -> Optional[AsyncConnection]:
     # check if ConnectionPool exists
     connection_pool_class = getattr(oracledb, "AsyncConnectionPool", None)
 
@@ -852,12 +860,13 @@ def _get_similarity_search_query(
     table_name: str,
     distance_strategy: DistanceStrategy,
     k: int,
-    db_filter: Optional[FilterGroup],
+    db_filter: Optional[FilterGroup | FilterCondition] = None,
     return_embeddings: bool = False,
 ) -> str:
     where_clause = ""
+    bind_variables = []
     if db_filter:
-        where_clause = _generate_where_clause(db_filter)
+        where_clause = _generate_where_clause(db_filter, bind_variables)
 
     query = f"""
     SELECT id,
@@ -872,7 +881,7 @@ def _get_similarity_search_query(
     FETCH APPROX FIRST {k} ROWS ONLY
     """
 
-    return query
+    return query, bind_variables
 
 
 async def _handle_context(
@@ -1116,10 +1125,11 @@ class OracleVS(VectorStore):
     def add_texts(
         self,
         texts: Iterable[str],
-        metadatas: Optional[List[Dict[Any, Any]]] = None,
-        ids: Optional[List[str]] = None,
+        metadatas: Optional[list[dict]] = None,
+        *,
+        ids: Optional[list[str]] = None,
         **kwargs: Any,
-    ) -> List[str]:
+    ) -> list[str]:
         """Add more texts to the vectorstore index.
         Args:
           texts: Iterable of strings to add to the vectorstore.
@@ -1218,7 +1228,8 @@ class OracleVS(VectorStore):
         self,
         query: str,
         k: int = 4,
-        filter: Optional[Dict[str, Any]] = None,
+        *,
+        db_filter: Optional[FilterCondition | FilterGroup] = None,
         **kwargs: Any,
     ) -> List[Document]:
         """Return docs most similar to query."""
@@ -1226,7 +1237,7 @@ class OracleVS(VectorStore):
         if isinstance(self.embedding_function, Embeddings):
             embedding = self.embedding_function.embed_query(query)
         documents = self.similarity_search_by_vector(
-            embedding=embedding, k=k, filter=filter, **kwargs
+            embedding=embedding, k=k, db_filter=db_filter, **kwargs
         )
         return documents
 
@@ -1234,7 +1245,8 @@ class OracleVS(VectorStore):
         self,
         query: str,
         k: int = 4,
-        filter: Optional[Dict[str, Any]] = None,
+        *,
+        db_filter: Optional[FilterCondition | FilterGroup] = None,
         **kwargs: Any,
     ) -> List[Document]:
         """Return docs most similar to query."""
@@ -1242,7 +1254,7 @@ class OracleVS(VectorStore):
         if isinstance(self.embedding_function, Embeddings):
             embedding = await self.embedding_function.aembed_query(query)
         documents = await self.asimilarity_search_by_vector(
-            embedding=embedding, k=k, filter=filter, **kwargs
+            embedding=embedding, k=k, db_filter=db_filter, **kwargs
         )
         return documents
 
@@ -1250,11 +1262,12 @@ class OracleVS(VectorStore):
         self,
         embedding: List[float],
         k: int = 4,
-        filter: Optional[dict[str, Any]] = None,
+        *,
+        db_filter: Optional[FilterCondition | FilterGroup] = None,
         **kwargs: Any,
     ) -> List[Document]:
         docs_and_scores = self.similarity_search_by_vector_with_relevance_scores(
-            embedding=embedding, k=k, filter=filter, **kwargs
+            embedding=embedding, k=k, db_filter=db_filter, **kwargs
         )
         return [doc for doc, _ in docs_and_scores]
 
@@ -1262,11 +1275,12 @@ class OracleVS(VectorStore):
         self,
         embedding: List[float],
         k: int = 4,
-        filter: Optional[dict[str, Any]] = None,
+        *,
+        db_filter: Optional[FilterCondition | FilterGroup] = None,
         **kwargs: Any,
     ) -> List[Document]:
         docs_and_scores = await self.asimilarity_search_by_vector_with_relevance_scores(
-            embedding=embedding, k=k, filter=filter, **kwargs
+            embedding=embedding, k=k, db_filter=db_filter, **kwargs
         )
         return [doc for doc, _ in docs_and_scores]
 
@@ -1274,7 +1288,8 @@ class OracleVS(VectorStore):
         self,
         query: str,
         k: int = 4,
-        filter: Optional[dict[str, Any]] = None,
+        *,
+        db_filter: Optional[FilterCondition | FilterGroup] = None,
         **kwargs: Any,
     ) -> List[Tuple[Document, float]]:
         """Return docs most similar to query."""
@@ -1282,7 +1297,7 @@ class OracleVS(VectorStore):
         if isinstance(self.embedding_function, Embeddings):
             embedding = self.embedding_function.embed_query(query)
         docs_and_scores = self.similarity_search_by_vector_with_relevance_scores(
-            embedding=embedding, k=k, filter=filter, **kwargs
+            embedding=embedding, k=k, db_filter=db_filter, **kwargs
         )
         return docs_and_scores
 
@@ -1290,7 +1305,8 @@ class OracleVS(VectorStore):
         self,
         query: str,
         k: int = 4,
-        filter: Optional[dict[str, Any]] = None,
+        *,
+        db_filter: Optional[FilterCondition | FilterGroup] = None,
         **kwargs: Any,
     ) -> List[Tuple[Document, float]]:
         """Return docs most similar to query."""
@@ -1298,7 +1314,7 @@ class OracleVS(VectorStore):
         if isinstance(self.embedding_function, Embeddings):
             embedding = await self.embedding_function.aembed_query(query)
         docs_and_scores = await self.asimilarity_search_by_vector_with_relevance_scores(
-            embedding=embedding, k=k, filter=filter, **kwargs
+            embedding=embedding, k=k, db_filter=db_filter, **kwargs
         )
         return docs_and_scores
 
@@ -1307,15 +1323,15 @@ class OracleVS(VectorStore):
         self,
         embedding: List[float],
         k: int = 4,
-        filter: Optional[dict[str, Any]] = None,
+        *,
+        db_filter: Optional[FilterCondition | FilterGroup] = None,
         **kwargs: Any,
     ) -> List[Tuple[Document, float]]:
         docs_and_scores = []
 
         embedding_arr: Any = array.array("f", embedding)
 
-        db_filter: Optional[FilterGroup] = kwargs.get("db_filter", None)
-        query = _get_similarity_search_query(
+        query, bind_variables = _get_similarity_search_query(
             self.table_name,
             self.distance_strategy,
             k,
@@ -1329,10 +1345,13 @@ class OracleVS(VectorStore):
             raise ValueError("Failed to acquire a connection.")
         with connection.cursor() as cursor:
             cursor.outputtypehandler = output_type_string_handler
-            cursor.execute(query, embedding=embedding_arr)
+            params = {"embedding": embedding_arr}
+            for i, value in enumerate(bind_variables):
+                params[f"value{i}"] = value
+
+            cursor.execute(query, **params)
             results = cursor.fetchall()
 
-            # filter results if filter is provided
             for result in results:
                 metadata = result[2] or {}
                 page_content_str = result[1] if result[1] is not None else ""
@@ -1346,11 +1365,7 @@ class OracleVS(VectorStore):
                 )
                 distance = result[3]
 
-                # apply filtering based on the 'filter' dictionary
-                if not filter or all(
-                    metadata.get(key) in value for key, value in filter.items()
-                ):
-                    docs_and_scores.append((doc, distance))
+                docs_and_scores.append((doc, distance))
 
         return docs_and_scores
 
@@ -1359,15 +1374,15 @@ class OracleVS(VectorStore):
         self,
         embedding: List[float],
         k: int = 4,
-        filter: Optional[dict[str, Any]] = None,
+        *,
+        db_filter: Optional[FilterCondition | FilterGroup] = None,
         **kwargs: Any,
     ) -> List[Tuple[Document, float]]:
         docs_and_scores = []
 
         embedding_arr: Any = array.array("f", embedding)
 
-        db_filter: Optional[FilterGroup] = kwargs.get("db_filter", None)
-        query = _get_similarity_search_query(
+        query, bind_variables = _get_similarity_search_query(
             self.table_name,
             self.distance_strategy,
             k,
@@ -1379,10 +1394,13 @@ class OracleVS(VectorStore):
             # execute the query
             with connection.cursor() as cursor:
                 cursor.outputtypehandler = output_type_string_handler
-                await cursor.execute(query, embedding=embedding_arr)
+                params = {"embedding": embedding_arr}
+                for i, value in enumerate(bind_variables):
+                    params[f"value{i}"] = value
+
+                await cursor.execute(query, **params)
                 results = await cursor.fetchall()
 
-                # filter results if filter is provided
                 for result in results:
                     metadata = result[2] or {}
                     page_content_str = result[1] if result[1] is not None else ""
@@ -1395,11 +1413,7 @@ class OracleVS(VectorStore):
                     )
                     distance = result[3]
 
-                    # apply filtering based on the 'filter' dictionary
-                    if not filter or all(
-                        metadata.get(key) in value for key, value in filter.items()
-                    ):
-                        docs_and_scores.append((doc, distance))
+                    docs_and_scores.append((doc, distance))
 
             return docs_and_scores
 
@@ -1409,16 +1423,16 @@ class OracleVS(VectorStore):
     def similarity_search_by_vector_returning_embeddings(
         self,
         embedding: List[float],
-        k: int,
-        filter: Optional[Dict[str, Any]] = None,
+        k: int = 4,
+        *,
+        db_filter: Optional[FilterCondition | FilterGroup] = None,
         **kwargs: Any,
     ) -> List[Tuple[Document, float, NDArray[np.float32]]]:
         embedding_arr: Any = array.array("f", embedding)
 
         documents = []
 
-        db_filter: Optional[FilterGroup] = kwargs.get("db_filter", None)
-        query = _get_similarity_search_query(
+        query, bind_variables = _get_similarity_search_query(
             self.table_name,
             self.distance_strategy,
             k,
@@ -1432,7 +1446,11 @@ class OracleVS(VectorStore):
             raise ValueError("Failed to acquire a connection.")
         with connection.cursor() as cursor:
             cursor.outputtypehandler = output_type_string_handler
-            cursor.execute(query, embedding=embedding_arr)
+            params = {"embedding": embedding_arr}
+            for i, value in enumerate(bind_variables):
+                params[f"value{i}"] = value
+
+            cursor.execute(query, **params)
             results = cursor.fetchall()
 
             for result in results:
@@ -1441,11 +1459,59 @@ class OracleVS(VectorStore):
                     raise Exception("Unexpected type:", type(page_content_str))
                 metadata = result[2] or {}
 
-                # apply filter if provided and matches; otherwise, add all
-                # documents
-                if not filter or all(
-                    metadata.get(key) in value for key, value in filter.items()
-                ):
+                document = Document(page_content=page_content_str, metadata=metadata)
+                distance = result[3]
+
+                # assuming result[4] is already in the correct format;
+                # adjust if necessary
+                current_embedding = (
+                    np.array(result[4], dtype=np.float32)
+                    if result[4]
+                    else np.empty(0, dtype=np.float32)
+                )
+
+                documents.append((document, distance, current_embedding))
+
+        return documents
+
+    @_ahandle_exceptions
+    async def asimilarity_search_by_vector_returning_embeddings(
+        self,
+        embedding: List[float],
+        k: int = 4,
+        *,
+        db_filter: Optional[FilterCondition | FilterGroup] = None,
+        **kwargs: Any,
+    ) -> List[Tuple[Document, float, NDArray[np.float32]]]:
+        embedding_arr: Any = array.array("f", embedding)
+
+        documents = []
+
+        query, bind_variables = _get_similarity_search_query(
+            self.table_name,
+            self.distance_strategy,
+            k,
+            db_filter,
+            return_embeddings=True,
+        )
+
+        async def context(connection: Any) -> List:
+            # execute the query
+            with connection.cursor() as cursor:
+                cursor.outputtypehandler = output_type_string_handler
+                params = {"embedding": embedding_arr}
+                for i, value in enumerate(bind_variables):
+                    params[f"value{i}"] = value
+
+                await cursor.execute(query, **params)
+                results = await cursor.fetchall()
+
+                for result in results:
+                    page_content_str = result[1] if result[1] is not None else ""
+                    if not isinstance(page_content_str, str):
+                        raise Exception("Unexpected type:", type(page_content_str))
+                    metadata = result[2] or {}
+
                     document = Document(
                         page_content=page_content_str, metadata=metadata
                     )
@@ -1461,62 +1527,6 @@ class OracleVS(VectorStore):
 
                     documents.append((document, distance, current_embedding))
 
-        return documents
-
-    @_ahandle_exceptions
-    async def asimilarity_search_by_vector_returning_embeddings(
-        self,
-        embedding: List[float],
-        k: int,
-        filter: Optional[Dict[str, Any]] = None,
-        **kwargs: Any,
-    ) -> List[Tuple[Document, float, NDArray[np.float32]]]:
-        embedding_arr: Any = array.array("f", embedding)
-
-        documents = []
-
-        db_filter: Optional[FilterGroup] = kwargs.get("db_filter", None)
-        query = _get_similarity_search_query(
-            self.table_name,
-            self.distance_strategy,
-            k,
-            db_filter,
-            return_embeddings=True,
-        )
-
-        async def context(connection: Any) -> List:
-            # execute the query
-            with connection.cursor() as cursor:
-                cursor.outputtypehandler = output_type_string_handler
-                await cursor.execute(query, embedding=embedding_arr)
-                results = await cursor.fetchall()
-
-                for result in results:
-                    page_content_str = result[1] if result[1] is not None else ""
-                    if not isinstance(page_content_str, str):
-                        raise Exception("Unexpected type:", type(page_content_str))
-                    metadata = result[2] or {}
-
-                    # apply filter if provided and matches; otherwise, add all
-                    # documents
-                    if not filter or all(
-                        metadata.get(key) in value for key, value in filter.items()
-                    ):
-                        document = Document(
-                            page_content=page_content_str, metadata=metadata
-                        )
-                        distance = result[3]
-
-                        # assuming result[4] is already in the correct format;
-                        # adjust if necessary
-                        current_embedding = (
-                            np.array(result[4], dtype=np.float32)
-                            if result[4]
-                            else np.empty(0, dtype=np.float32)
-                        )
-
-                        documents.append((document, distance, current_embedding))
-
             return documents
 
         return await _handle_context(self.client, context)
@@ -1528,7 +1538,7 @@ class OracleVS(VectorStore):
         k: int = 4,
         fetch_k: int = 20,
         lambda_mult: float = 0.5,
-        filter: Optional[Dict[str, Any]] = None,
+        db_filter: Optional[FilterCondition | FilterGroup] = None,
     ) -> List[Tuple[Document, float]]:
         """Return docs and their similarity scores selected using the
         maximal marginal
@@ -1544,8 +1554,8 @@ class OracleVS(VectorStore):
           k: Number of Documents to return. Defaults to 4.
           fetch_k: Number of Documents to fetch before filtering to
                    pass to MMR algorithm.
-          filter: (Optional[Dict[str, str]]): Filter by metadata. Defaults
-          to None.
+          db_filter: (Optional[FilterCondition | FilterGroup]): Filter by metadata.
+                                                                Defaults to None.
           lambda_mult: Number between 0 and 1 that determines the degree
                        of diversity among the results with 0 corresponding
                        to maximum diversity and 1 to minimum diversity.
@@ -1558,7 +1568,7 @@ class OracleVS(VectorStore):
 
         # fetch documents and their scores
         docs_scores_embeddings = self.similarity_search_by_vector_returning_embeddings(
-            embedding, fetch_k, filter=filter
+            embedding, fetch_k, db_filter=db_filter
         )
         # assuming documents_with_scores is a list of tuples (Document, score)
         mmr_selected_documents_with_scores = mmr_from_docs_embeddings(
@@ -1574,7 +1584,7 @@ class OracleVS(VectorStore):
         k: int = 4,
         fetch_k: int = 20,
         lambda_mult: float = 0.5,
-        filter: Optional[Dict[str, Any]] = None,
+        db_filter: Optional[FilterCondition | FilterGroup] = None,
     ) -> List[Tuple[Document, float]]:
         """Return docs and their similarity scores selected using the
         maximal marginal
@@ -1590,8 +1600,8 @@ class OracleVS(VectorStore):
           k: Number of Documents to return. Defaults to 4.
           fetch_k: Number of Documents to fetch before filtering to
                    pass to MMR algorithm.
-          filter: (Optional[Dict[str, str]]): Filter by metadata. Defaults
-          to None.
+          db_filter: (Optional[FilterCondition | FilterGroup]): Filter by metadata.
+                                                                Defaults to None.
           lambda_mult: Number between 0 and 1 that determines the degree
                        of diversity among the results with 0 corresponding
                        to maximum diversity and 1 to minimum diversity.
@@ -1605,7 +1615,7 @@ class OracleVS(VectorStore):
         # fetch documents and their scores
         docs_scores_embeddings = (
             await self.asimilarity_search_by_vector_returning_embeddings(
-                embedding, fetch_k, filter=filter
+                embedding, fetch_k, db_filter=db_filter
             )
         )
         # assuming documents_with_scores is a list of tuples (Document, score)
@@ -1618,10 +1628,11 @@ class OracleVS(VectorStore):
     def max_marginal_relevance_search_by_vector(
         self,
         embedding: List[float],
+        *,
         k: int = 4,
         fetch_k: int = 20,
         lambda_mult: float = 0.5,
-        filter: Optional[Dict[str, Any]] = None,
+        db_filter: Optional[FilterCondition | FilterGroup] = None,
         **kwargs: Any,
     ) -> List[Document]:
         """Return docs selected using the maximal marginal relevance.
@@ -1639,13 +1650,18 @@ class OracleVS(VectorStore):
                        of diversity among the results with 0 corresponding
                        to maximum diversity and 1 to minimum diversity.
                        Defaults to 0.5.
-          filter: Optional[Dict[str, Any]]
+          db_filter: (Optional[FilterCondition | FilterGroup]): Filter by metadata.
+                                                                Defaults to None.
           **kwargs: Any
         Returns:
           List of Documents selected by maximal marginal relevance.
         """
         docs_and_scores = self.max_marginal_relevance_search_with_score_by_vector(
-            embedding, k=k, fetch_k=fetch_k, lambda_mult=lambda_mult, filter=filter
+            embedding,
+            k=k,
+            fetch_k=fetch_k,
+            lambda_mult=lambda_mult,
+            db_filter=db_filter,
         )
         return [doc for doc, _ in docs_and_scores]
 
@@ -1655,7 +1671,7 @@ class OracleVS(VectorStore):
         k: int = 4,
         fetch_k: int = 20,
         lambda_mult: float = 0.5,
-        filter: Optional[Dict[str, Any]] = None,
+        db_filter: Optional[FilterCondition | FilterGroup] = None,
         **kwargs: Any,
     ) -> List[Document]:
         """Return docs selected using the maximal marginal relevance.
@@ -1673,14 +1689,19 @@ class OracleVS(VectorStore):
                        of diversity among the results with 0 corresponding
                        to maximum diversity and 1 to minimum diversity.
                        Defaults to 0.5.
-          filter: Optional[Dict[str, Any]]
+          db_filter: (Optional[FilterCondition | FilterGroup]): Filter by metadata.
+                                                                Defaults to None.
           **kwargs: Any
         Returns:
           List of Documents selected by maximal marginal relevance.
         """
         docs_and_scores = (
             await self.amax_marginal_relevance_search_with_score_by_vector(
-                embedding, k=k, fetch_k=fetch_k, lambda_mult=lambda_mult, filter=filter
+                embedding,
+                k=k,
+                fetch_k=fetch_k,
+                lambda_mult=lambda_mult,
+                db_filter=db_filter,
             )
         )
         return [doc for doc, _ in docs_and_scores]
@@ -1692,7 +1713,7 @@ class OracleVS(VectorStore):
         k: int = 4,
         fetch_k: int = 20,
         lambda_mult: float = 0.5,
-        filter: Optional[Dict[str, Any]] = None,
+        db_filter: Optional[FilterCondition | FilterGroup] = None,
         **kwargs: Any,
     ) -> List[Document]:
         """Return docs selected using the maximal marginal relevance.
@@ -1710,7 +1731,8 @@ class OracleVS(VectorStore):
                        of diversity among the results with 0 corresponding
                        to maximum diversity and 1 to minimum diversity.
                        Defaults to 0.5.
-          filter: Optional[Dict[str, Any]]
+          db_filter: (Optional[FilterCondition | FilterGroup]): Filter by metadata.
+                                                                Defaults to None.
           **kwargs
         Returns:
           List of Documents selected by maximal marginal relevance.
@@ -1724,7 +1746,7 @@ class OracleVS(VectorStore):
             k=k,
             fetch_k=fetch_k,
             lambda_mult=lambda_mult,
-            filter=filter,
+            db_filter=db_filter,
             **kwargs,
         )
         return documents
@@ -1736,7 +1758,7 @@ class OracleVS(VectorStore):
         k: int = 4,
         fetch_k: int = 20,
         lambda_mult: float = 0.5,
-        filter: Optional[Dict[str, Any]] = None,
+        db_filter: Optional[FilterCondition | FilterGroup] = None,
         **kwargs: Any,
     ) -> List[Document]:
         """Return docs selected using the maximal marginal relevance.
@@ -1754,7 +1776,8 @@ class OracleVS(VectorStore):
                        of diversity among the results with 0 corresponding
                        to maximum diversity and 1 to minimum diversity.
                        Defaults to 0.5.
-          filter: Optional[Dict[str, Any]]
+          db_filter: (Optional[FilterCondition | FilterGroup]): Filter by metadata.
+                                                                Defaults to None.
           **kwargs
         Returns:
           List of Documents selected by maximal marginal relevance.
@@ -1768,7 +1791,7 @@ class OracleVS(VectorStore):
             k=k,
             fetch_k=fetch_k,
             lambda_mult=lambda_mult,
-            filter=filter,
+            db_filter=db_filter,
             **kwargs,
         )
         return documents
@@ -1812,9 +1835,6 @@ class OracleVS(VectorStore):
     @classmethod
     def _from_texts_helper(
         cls: Type[OracleVS],
-        texts: Iterable[str],
-        embedding: Embeddings,
-        metadatas: Optional[List[dict]] = None,
         **kwargs: Any,
     ) -> Tuple[Any, str, DistanceStrategy, str, Dict]:
         client: Any = kwargs.get("client", None)
@@ -1852,7 +1872,7 @@ class OracleVS(VectorStore):
             distance_strategy,
             query,
             params,
-        ) = OracleVS._from_texts_helper(texts, embedding, metadatas, **kwargs)
+        ) = OracleVS._from_texts_helper(**kwargs)
 
         vss = cls(
             client=client,
@@ -1881,7 +1901,7 @@ class OracleVS(VectorStore):
             distance_strategy,
             query,
             params,
-        ) = OracleVS._from_texts_helper(texts, embedding, metadatas, **kwargs)
+        ) = OracleVS._from_texts_helper(**kwargs)
 
         vss = await OracleVS.acreate(
             client=client,
