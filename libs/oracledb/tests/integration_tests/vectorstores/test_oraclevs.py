@@ -19,6 +19,8 @@ from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.vectorstores.utils import DistanceStrategy
 
 from langchain_oracledb.vectorstores.oraclevs import (
+    FilterCondition,
+    FilterGroup,
     OracleVS,
     _acreate_table,
     _aindex_exists,
@@ -51,6 +53,8 @@ except Exception as e:
 ############################
 ####### table_exists #######
 ############################
+
+
 def test_table_exists_test() -> None:
     try:
         connection = oracledb.connect(user=username, password=password, dsn=dsn)
@@ -1676,7 +1680,7 @@ def test_perform_search_test() -> None:
         # perform search
         query = "YashB"
 
-        db_filter = {
+        db_filter: FilterGroup = {
             "_or": [  # FilterGroup
                 {"key": "id", "oper": "EQ", "value": "106"},
                 {"key": "id", "oper": "EQ", "value": "108"},
@@ -1768,7 +1772,7 @@ async def test_perform_search_test_async() -> None:
         # perform search
         query = "YashB"
 
-        db_filter = {
+        db_filter: FilterGroup = {
             "_or": [  # FilterGroup
                 {"key": "id", "oper": "EQ", "value": "106"},
                 {"key": "id", "oper": "EQ", "value": "108"},
@@ -1860,15 +1864,19 @@ def test_db_filter_test() -> None:
         # perform search
         query = "Strawberry"
 
-        db_filter = {"key": "id", "oper": "EQ", "value": "bl"}  # FilterCondition
+        db_filter: FilterCondition = {
+            "key": "id",
+            "oper": "EQ",
+            "value": "bl",
+        }  # FilterCondition
 
         # nested db filter
-        db_filter_nested = {
+        db_filter_nested: FilterGroup = {
             "_or": [
                 {"key": "id", "oper": "EQ", "value": "ba"},  # FilterCondition
                 {
                     "_and": [  # FilterGroup
-                        {"key": "order", "oper": "LTE", "value": 4},
+                        {"key": "order", "oper": "LTE", "value": "4"},
                         {"key": "id", "oper": "EQ", "value": "st"},
                     ]
                 },
@@ -1878,9 +1886,9 @@ def test_db_filter_test() -> None:
         for filtered_function in FILTERED_FUNCTIONS:
             method = getattr(vs, filtered_function)
 
-            query_emb = query
+            query_emb: list[float] | str = query
             if "_by_vector" in filtered_function:
-                query_emb = vs.embedding_function.embed_query(query)
+                query_emb = vs.embedding_function.embed_query(query)  # type: ignore[union-attr]
 
             # search without filter
             result = method(query_emb, k=1)
@@ -1899,7 +1907,7 @@ def test_db_filter_test() -> None:
 
         exception_occurred = False
         try:
-            db_filter_exc = {
+            db_filter_exc: FilterGroup = {  # type: ignore[typeddict-unknown-key]
                 "_xor": [  # Incorrect operation _xor
                     {"key": "id", "oper": "EQ", "value": "ba"},
                     {"key": "order", "oper": "LTE", "value": 4},
@@ -1920,7 +1928,7 @@ def test_db_filter_test() -> None:
                         "oper": "XEQ",
                         "value": "ba",
                     },  # Incorrect operation XEQ
-                    {"key": "order", "oper": "LTE", "value": 4},
+                    {"key": "order", "oper": "LTE", "value": 4},  # type: ignore[typeddict-item]
                 ]
             }
             result = vs.similarity_search(query, 1, db_filter=db_filter_exc)
@@ -1993,14 +2001,18 @@ async def test_db_filter_test_async() -> None:
         # perform search
         query = "Strawberry"
 
-        db_filter = {"key": "id", "oper": "EQ", "value": "bl"}  # FilterCondition
+        db_filter: FilterCondition = {
+            "key": "id",
+            "oper": "EQ",
+            "value": "bl",
+        }  # FilterCondition
         # nested db filter
-        db_filter_nested = {
+        db_filter_nested: FilterGroup = {
             "_or": [
                 {"key": "id", "oper": "EQ", "value": "ba"},  # FilterCondition
                 {
                     "_and": [  # FilterGroup
-                        {"key": "order", "oper": "LTE", "value": 4},
+                        {"key": "order", "oper": "LTE", "value": "4"},
                         {"key": "id", "oper": "EQ", "value": "st"},
                     ]
                 },
@@ -2010,9 +2022,9 @@ async def test_db_filter_test_async() -> None:
         for filtered_function in FILTERED_FUNCTIONS:
             method = getattr(vs, "a" + filtered_function)
 
-            query_emb = query
+            query_emb: list[float] | str = query
             if "_by_vector" in filtered_function:
-                query_emb = vs.embedding_function.embed_query(query)
+                query_emb = vs.embedding_function.embed_query(query)  # type: ignore[union-attr]
 
             # search without filter
             result = await method(query_emb, k=1)
@@ -2031,7 +2043,7 @@ async def test_db_filter_test_async() -> None:
 
         exception_occurred = False
         try:
-            db_filter_exc = {
+            db_filter_exc: FilterGroup = {  # type: ignore[typeddict-unknown-key]
                 "_xor": [  # Incorrect operation _xor
                     {"key": "id", "oper": "EQ", "value": "ba"},
                     {"key": "order", "oper": "LTE", "value": 4},
@@ -2052,7 +2064,7 @@ async def test_db_filter_test_async() -> None:
                         "oper": "XEQ",
                         "value": "ba",
                     },  # Incorrect operation XEQ
-                    {"key": "order", "oper": "LTE", "value": 4},
+                    {"key": "order", "oper": "LTE", "value": 4},  # type: ignore[typeddict-item]
                 ]
             }
             result = await vs.asimilarity_search(query, 1, db_filter=db_filter_exc)
@@ -2465,6 +2477,11 @@ async def test_index_table_case_async(caplog: pytest.LogCaptureFixture) -> None:
     await adrop_table_purge(connection, "TB1")
     await adrop_table_purge(connection, "Tb1")
     await adrop_table_purge(connection, "TB2")
+
+
+##################################
+##### test_quote_identifier  #####
+##################################
 
 
 def test_quote_identifier() -> None:
