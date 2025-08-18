@@ -18,6 +18,7 @@ import pytest
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.vectorstores.utils import DistanceStrategy
 
+from langchain_oracledb.embeddings import OracleEmbeddings
 from langchain_oracledb.vectorstores.oraclevs import (
     FilterCondition,
     FilterGroup,
@@ -2477,6 +2478,80 @@ async def test_index_table_case_async(caplog: pytest.LogCaptureFixture) -> None:
     await adrop_table_purge(connection, "TB1")
     await adrop_table_purge(connection, "Tb1")
     await adrop_table_purge(connection, "TB2")
+
+
+##################################
+##### test_oracle_embeddings  ####
+##################################
+
+
+def test_oracle_embeddings() -> None:
+    try:
+        connection = oracledb.connect(user=username, password=password, dsn=dsn)
+    except Exception:
+        sys.exit(1)
+
+    drop_table_purge(connection, "TB1")
+
+    texts = ["Database Document", "Code Document"]
+    metadata = [
+        {"id": "100", "link": "Document Example Test 1"},
+        {"id": "101", "link": "Document Example Test 2"},
+    ]
+    embedder_params = {"provider": "database", "model": "allminilm"}
+    proxy = ""
+
+    # instance
+    model = OracleEmbeddings(conn=connection, params=embedder_params, proxy=proxy)
+
+    vs_obj = OracleVS(connection, model, "TB1", DistanceStrategy.EUCLIDEAN_DISTANCE)
+
+    vs_obj.add_texts(texts, metadata)
+    res = vs_obj.similarity_search("database", 1)
+
+    assert "Database" in res[0].page_content
+
+    drop_table_purge(connection, "TB1")
+
+    connection.close()
+
+
+@pytest.mark.asyncio
+async def test_oracle_embeddings_async(caplog: pytest.LogCaptureFixture) -> None:
+    try:
+        connection = await oracledb.connect_async(
+            user=username, password=password, dsn=dsn
+        )
+
+        connection_sync = oracledb.connect(user=username, password=password, dsn=dsn)
+    except Exception:
+        sys.exit(1)
+
+    await adrop_table_purge(connection, "TB1")
+
+    texts = ["Database Document", "Code Document"]
+    metadata = [
+        {"id": "100", "link": "Document Example Test 1"},
+        {"id": "101", "link": "Document Example Test 2"},
+    ]
+    embedder_params = {"provider": "database", "model": "allminilm"}
+    proxy = ""
+
+    # instance
+    model = OracleEmbeddings(conn=connection_sync, params=embedder_params, proxy=proxy)
+
+    vs_obj = await OracleVS.acreate(
+        connection, model, "TB1", DistanceStrategy.EUCLIDEAN_DISTANCE
+    )
+
+    await vs_obj.aadd_texts(texts, metadata)
+    res = await vs_obj.asimilarity_search("database", 1)
+
+    assert "Database" in res[0].page_content
+
+    await adrop_table_purge(connection, "TB1")
+
+    await connection.close()
 
 
 ##################################

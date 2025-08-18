@@ -48,6 +48,8 @@ from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
 from langchain_core.vectorstores import VectorStore
 
+from ..embeddings import OracleEmbeddings
+
 logger = logging.getLogger(__name__)
 log_level = os.getenv("LOG_LEVEL", "ERROR").upper()
 logging.basicConfig(
@@ -862,9 +864,9 @@ def _get_similarity_search_query(
     k: int,
     db_filter: Optional[FilterGroup | FilterCondition] = None,
     return_embeddings: bool = False,
-) -> str:
+) -> Tuple[str, list[str]]:
     where_clause = ""
-    bind_variables = []
+    bind_variables: list[str] = []
     if db_filter:
         where_clause = _generate_where_clause(db_filter, bind_variables)
 
@@ -1142,33 +1144,61 @@ class OracleVS(VectorStore):
         texts = list(texts)
         processed_ids = get_processed_ids(texts, metadatas, ids)
 
-        embeddings = self._embed_documents(texts)
         if not metadatas:
             metadatas = [{} for _ in texts]
 
-        docs: List[Tuple[Any, Any, Any, Any]] = [
-            (
-                id_,
-                array.array("f", embedding),
-                metadata,
-                text,
-            )
-            for id_, embedding, metadata, text in zip(
-                processed_ids, embeddings, metadatas, texts
-            )
-        ]
+        docs: Any
+        if not isinstance(self.embeddings, OracleEmbeddings):
+            embeddings = self._embed_documents(texts)
+
+            docs = [
+                (
+                    id_,
+                    array.array("f", embedding),
+                    metadata,
+                    text,
+                )
+                for id_, embedding, metadata, text in zip(
+                    processed_ids, embeddings, metadatas, texts
+                )
+            ]
+        else:
+            docs = list(zip(processed_ids, metadatas, texts))
 
         connection = _get_connection(self.client)
         if connection is None:
             raise ValueError("Failed to acquire a connection.")
         with connection.cursor() as cursor:
-            cursor.setinputsizes(None, None, oracledb.DB_TYPE_JSON, None)
-            cursor.executemany(
-                f"INSERT INTO {self.table_name} (id, embedding, metadata, "
-                f"text) VALUES (:1, :2, :3, :4)",
-                docs,
-            )
-            connection.commit()
+            if not isinstance(self.embeddings, OracleEmbeddings):
+                cursor.setinputsizes(None, None, oracledb.DB_TYPE_JSON, None)
+                cursor.executemany(
+                    f"INSERT INTO {self.table_name} (id, embedding, metadata, "
+                    f"text) VALUES (:1, :2, :3, :4)",
+                    docs,
+                )
+                connection.commit()
+            else:
+                if self.embeddings.proxy:
+                    cursor.execute(
+                        "begin utl_http.set_proxy(:proxy); end;",
+                        proxy=self.embeddings.proxy,
+                    )
+
+                cursor.setinputsizes(None, oracledb.DB_TYPE_JSON, None)
+                cursor.executemany(
+                    f"INSERT INTO {self.table_name} (id, metadata, "
+                    f"text) VALUES (:1, :2, :3)",
+                    docs,
+                )
+
+                cursor.setinputsizes(oracledb.DB_TYPE_JSON)
+                update_sql = (
+                    f"UPDATE {self.table_name} "
+                    "SET embedding = dbms_vector_chain.utl_to_embedding(text, json(:1))"
+                )
+                cursor.execute(update_sql, [self.embeddings.params])
+                connection.commit()
+
         return processed_ids
 
     @_ahandle_exceptions
@@ -1192,33 +1222,60 @@ class OracleVS(VectorStore):
         texts = list(texts)
         processed_ids = get_processed_ids(texts, metadatas, ids)
 
-        embeddings = await self._aembed_documents(texts)
         if not metadatas:
             metadatas = [{} for _ in texts]
 
-        docs: List[Tuple[Any, Any, Any, Any]] = [
-            (
-                id_,
-                array.array("f", embedding),
-                metadata,
-                text,
-            )
-            for id_, embedding, metadata, text in zip(
-                processed_ids, embeddings, metadatas, texts
-            )
-        ]
+        docs: Any
+        if not isinstance(self.embeddings, OracleEmbeddings):
+            embeddings = await self._aembed_documents(texts)
+
+            docs = [
+                (
+                    id_,
+                    array.array("f", embedding),
+                    metadata,
+                    text,
+                )
+                for id_, embedding, metadata, text in zip(
+                    processed_ids, embeddings, metadatas, texts
+                )
+            ]
+        else:
+            docs = list(zip(processed_ids, metadatas, texts))
 
         async def context(connection: Any) -> None:
             if connection is None:
                 raise ValueError("Failed to acquire a connection.")
             with connection.cursor() as cursor:
-                cursor.setinputsizes(None, None, oracledb.DB_TYPE_JSON, None)
-                await cursor.executemany(
-                    f"INSERT INTO {self.table_name} (id, embedding, metadata, "
-                    f"text) VALUES (:1, :2, :3, :4)",
-                    docs,
-                )
-                await connection.commit()
+                if not isinstance(self.embeddings, OracleEmbeddings):
+                    cursor.setinputsizes(None, None, oracledb.DB_TYPE_JSON, None)
+                    await cursor.executemany(
+                        f"INSERT INTO {self.table_name} (id, embedding, metadata, "
+                        f"text) VALUES (:1, :2, :3, :4)",
+                        docs,
+                    )
+                    await connection.commit()
+                else:
+                    if self.embeddings.proxy:
+                        await cursor.execute(
+                            "begin utl_http.set_proxy(:proxy); end;",
+                            proxy=self.embeddings.proxy,
+                        )
+
+                    cursor.setinputsizes(None, oracledb.DB_TYPE_JSON, None)
+                    await cursor.executemany(
+                        f"INSERT INTO {self.table_name} (id, metadata, "
+                        f"text) VALUES (:1, :2, :3)",
+                        docs,
+                    )
+
+                    cursor.setinputsizes(oracledb.DB_TYPE_JSON)
+                    update_sql = (
+                        f"UPDATE {self.table_name} "
+                        "SET embedding = dbms_vector_chain.utl_to_embedding(text, json(:1))"  # noqa: E501
+                    )
+                    await cursor.execute(update_sql, [self.embeddings.params])
+                    await connection.commit()
 
         await _handle_context(self.client, context)
 
@@ -1628,7 +1685,6 @@ class OracleVS(VectorStore):
     def max_marginal_relevance_search_by_vector(
         self,
         embedding: List[float],
-        *,
         k: int = 4,
         fetch_k: int = 20,
         lambda_mult: float = 0.5,
