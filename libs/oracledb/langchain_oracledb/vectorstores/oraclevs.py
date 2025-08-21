@@ -27,7 +27,6 @@ from typing import (
     Optional,
     Tuple,
     Type,
-    TypedDict,
     TypeVar,
     Union,
     cast,
@@ -61,63 +60,262 @@ logging.basicConfig(
 # define a type variable that can be any kind of function
 T = TypeVar("T", bound=Callable[..., Any])
 
+LOGICAL_MAP = {
+    "$and": (" AND ", "({0})"),
+    "$or": (" OR ", "({0})"),
+    "$nor": (" OR ", "( NOT ({0}) )"),
+}
 
-class FilterCondition(TypedDict):
-    key: str
-    oper: str
-    value: str
+COMPARISON_MAP = {
+    "$exists": "",
+    "$eq": "@ == {0}",
+    "$ne": "@ != {0}",
+    "$gt": "@ > {0}",
+    "$lt": "@ < {0}",
+    "$gte": "@ >= {0}",
+    "$lte": "@ <= {0}",
+    "$between": "",
+    "$startsWith": "@  starts with {0}",
+    "$hasSubstring": "@  has substring {0}",
+    "$instr": "@  has substring {0}",
+    "$regex": "@  like_regex {0}",
+    "$like": "@  like {0}",
+    "$in": "",
+    "$nin": "",
+    "$all": "",
+    "$not": "",
+}
 
-
-class FilterGroup(TypedDict, total=False):
-    _and: Optional[List[Union["FilterCondition", "FilterGroup"]]]
-    _or: Optional[List[Union["FilterCondition", "FilterGroup"]]]
-
-
-def _convert_oper_to_sql(oper: str) -> str:
-    oper_map = {"EQ": "==", "GT": ">", "LT": "<", "GTE": ">=", "LTE": "<="}
-    if oper not in oper_map:
-        raise ValueError("Filter operation {} not supported".format(oper))
-    return oper_map.get(oper, "==")
-
-
-def _generate_condition(condition: FilterCondition, bind_variables: List[str]) -> str:
-    key = _quote_indentifier(condition["key"])
-    oper = _convert_oper_to_sql(condition["oper"])
-    value = condition["value"]
-
-    value_bind = f":value{len(bind_variables)}"
-    bind_variables.append(value)
-
-    return (
-        f"JSON_EXISTS(metadata, "
-        f"'$.{key}[*]?(@ {oper} $val)' "
-        f'PASSING {value_bind} AS "val")'
-    )
+# pperations that may need negation
+NOT_OPERS = ["$nin", "$not", "$exists"]
 
 
-def _generate_where_clause(
-    db_filter: FilterCondition | FilterGroup, bind_variables: List[str]
+def _get_comparison_string(
+    oper: str, value: Any, bind_variables: List[str]
+) -> tuple[str, str]:
+    # usual two sided operator case
+    if COMPARISON_MAP[oper] != "":
+        bind_l = len(bind_variables)
+        bind_variables.append(value)
+
+        return (
+            COMPARISON_MAP[oper].format(f"$val{bind_l}"),
+            f':value{bind_l} as "val{bind_l}"',
+        )
+
+    # between - needs two bindings
+    elif oper == "$between":
+        if not isinstance(value, List) or len(value) != 2:
+            raise ValueError(
+                f"Invalid value for $between: {value}. "
+                "It must be a list containing exactly 2 elements."
+            )
+
+        min_val, max_val = value
+        if min_val is None and max_val is None:
+            raise ValueError("At least one bound in $between must be non-null.")
+
+        conditions = []
+        passings = []
+        if min_val is not None:
+            bind_l = len(bind_variables)
+            bind_variables.append(min_val)
+
+            conditions.append(f"@ >= $val{bind_l}")
+            passings.append(f':value{bind_l} as "val{bind_l}"')
+
+        if max_val is not None:
+            bind_l = len(bind_variables)
+            bind_variables.append(max_val)
+
+            conditions.append(f"@ <= $val{bind_l}")
+            passings.append(f':value{bind_l} as "val{bind_l}"')
+
+        passing_bind = ",".join(passings)
+
+        return " && ".join(conditions), passing_bind
+
+    # in/nin/all needs N bindings
+    elif oper in ["$in", "$nin", "$all"]:
+        if not isinstance(value, List):
+            raise ValueError(
+                f"Invalid value for $in: {value}. It must be a non-empty list."
+            )
+
+        value_binds = []
+        passings = []
+        for val in value:
+            bind_l = len(bind_variables)
+            bind_variables.append(val)
+
+            value_binds.append(f"$val{bind_l}")
+            passings.append(f':value{bind_l} as "val{bind_l}"')
+
+        passing_bind = ",".join(passings)
+        condition = ""
+
+        if oper == "$all":
+            condition = "@ == " + " && @ == ".join(value_binds)
+
+        else:
+            value_bind = ",".join(value_binds)
+            condition = f"@ in ({value_bind})"
+
+        return condition, passing_bind
+
+    else:
+        raise ValueError(f"Invalid operator: {oper}. ")
+
+
+def _validate_metadata_key(metadata_key: str) -> None:
+    # Allow letters, digits, underscore, dot, brackets, comma, *, space (for 'to')
+    pattern = re.compile(r"[a-zA-Z0-9_\.\[\],\s\*]*")
+
+    if not pattern.fullmatch(metadata_key):
+        raise ValueError(
+            f"Invalid metadata key '{metadata_key}'. "
+            "Only letters, numbers, underscores, nesting via '.', "
+            "and array wildcards '[*]' are allowed."
+        )
+
+
+def _generate_condition(
+    metadata_key: str, value: Any, bind_variables: List[str]
 ) -> str:
-    if "key" in db_filter:  # identify as FilterCondition
-        return _generate_condition(cast(FilterCondition, db_filter), bind_variables)
+    # single check inside a JSON_EXISTS
+    SINGLE_MASK = (
+        "JSON_EXISTS(metadata, '$.{key}?(@ {oper} $val)' "
+        'PASSING {value_bind} AS "val")'
+    )
+    # combined checks with multiple operators and passing values
+    MULTIPLE_MASK = "JSON_EXISTS(metadata, '$.{key}?({filters})' PASSING {passes})"
 
-    if "_and" in db_filter and db_filter["_and"] is not None:
-        and_conditions = [
-            _generate_where_clause(cond, bind_variables)
-            for cond in db_filter["_and"]
-            if isinstance(cond, dict)
-        ]
-        return "(" + " AND ".join(and_conditions) + ")"
+    _validate_metadata_key(metadata_key)
 
-    if "_or" in db_filter and db_filter["_or"] is not None:
-        or_conditions = [
-            _generate_where_clause(cond, bind_variables)
-            for cond in db_filter["_or"]
-            if isinstance(cond, dict)
-        ]
-        return "(" + " OR ".join(or_conditions) + ")"
+    if not isinstance(value, (dict, list, tuple)):
+        # scalar-equality Clause
+        bind_l = f":value{len(bind_variables)}"
+        bind_variables.append(value)
 
-    raise ValueError(f"Invalid filter structure: {db_filter}")
+        return SINGLE_MASK.format(key=metadata_key, oper="==", value_bind=bind_l)
+
+    elif isinstance(value, dict):
+        # all values are filters
+        result: str
+        passings: str
+
+        # comparison operator keys
+        if len(value.keys() - COMPARISON_MAP.keys()) == 0:
+            not_dict = {}
+
+            passing_values = []
+            comparison_values = []
+
+            for k, v in value.items():
+                # if need to negate, cannot combine in single JSON_EXISTS
+                if k in NOT_OPERS:
+                    not_dict[k] = v
+                    continue
+
+                result, passings = _get_comparison_string(k, v, bind_variables)
+
+                comparison_values.append(result)
+                passing_values.append(passings)
+
+            # combine all operators in a single JSON_EXISTS
+            all_conditions = []
+            if len(comparison_values) != 0:
+                all_conditions.append(
+                    MULTIPLE_MASK.format(
+                        key=metadata_key,
+                        filters=" && ".join(comparison_values),
+                        passes=" , ".join(passing_values),
+                    )
+                )
+
+            # handle negated filters one by one, one JSON_EXISTS for each
+            for k, v in not_dict.items():
+                if k == "$not":
+                    condition = _generate_condition(metadata_key, v, bind_variables)
+                    all_conditions.append(f"NOT ({condition})")
+
+                elif k == "$exists":
+                    if not isinstance(v, bool):
+                        raise ValueError(
+                            f"Invalid value for $exists: {value}. "
+                            "It must be a boolean (true or false)."
+                        )
+
+                    if v:
+                        all_conditions.append(
+                            f"JSON_EXISTS(metadata, '$.{metadata_key}')"
+                        )
+                    else:
+                        all_conditions.append(
+                            f"NOT (JSON_EXISTS(metadata, '$.{metadata_key}'))"
+                        )
+
+                else:  # for now only $nin
+                    result, passings = _get_comparison_string(k, v, bind_variables)
+
+                    all_conditions.append(
+                        " NOT "
+                        + MULTIPLE_MASK.format(
+                            key=metadata_key, filters=result, passes=passings
+                        )
+                    )
+
+            res = " AND ".join(all_conditions)
+
+            if len(all_conditions) > 1:
+                return "(" + res + ")"
+
+            return res
+
+        else:
+            raise ValueError("Nested filters are not supported.")
+
+    else:
+        raise ValueError("Filter format is invalid.")
+
+
+def _generate_where_clause(db_filter: dict, bind_variables: List[str]) -> str:
+    if not isinstance(db_filter, dict):
+        raise ValueError("Filter syntax is incorrect. Must be a dictionary.")
+
+    all_conditions = []
+
+    for key, value in db_filter.items():
+        # must be a logical if on a high level
+        if key.startswith("$"):
+            if key not in LOGICAL_MAP.keys():
+                raise ValueError(f"'{key}' is not a recognized logical operator.")
+
+            filter_format = LOGICAL_MAP[key]
+
+            if not isinstance(value, list):
+                raise ValueError("Logical operators require an array of values.")
+
+            combine_conditions = [
+                _generate_where_clause(v, bind_variables) for v in value
+            ]
+
+            res = filter_format[1].format(filter_format[0].join(combine_conditions))
+
+            all_conditions.append(res)
+
+        else:
+            # this is a metadata key - not an operator
+            res = _generate_condition(key, value, bind_variables)
+            all_conditions.append(res)
+
+    # combine everything with AND
+    res = " AND ".join(all_conditions)
+
+    if len(all_conditions) > 1:
+        res = "(" + res + ")"
+
+    return res
 
 
 def _get_connection(client: Any) -> Optional[Connection]:
@@ -862,7 +1060,7 @@ def _get_similarity_search_query(
     table_name: str,
     distance_strategy: DistanceStrategy,
     k: int,
-    db_filter: Optional[FilterGroup | FilterCondition] = None,
+    db_filter: Optional[dict] = None,
     return_embeddings: bool = False,
 ) -> Tuple[str, list[str]]:
     where_clause = ""
@@ -1286,13 +1484,12 @@ class OracleVS(VectorStore):
         query: str,
         k: int = 4,
         *,
-        db_filter: Optional[FilterCondition | FilterGroup] = None,
+        db_filter: Optional[dict] = None,
         **kwargs: Any,
     ) -> List[Document]:
         """Return docs most similar to query."""
-        embedding: List[float] = []
-        if isinstance(self.embedding_function, Embeddings):
-            embedding = self.embedding_function.embed_query(query)
+        embedding: List[float] = self._embed_query(query)
+
         documents = self.similarity_search_by_vector(
             embedding=embedding, k=k, db_filter=db_filter, **kwargs
         )
@@ -1303,13 +1500,12 @@ class OracleVS(VectorStore):
         query: str,
         k: int = 4,
         *,
-        db_filter: Optional[FilterCondition | FilterGroup] = None,
+        db_filter: Optional[dict] = None,
         **kwargs: Any,
     ) -> List[Document]:
         """Return docs most similar to query."""
-        embedding: List[float] = []
-        if isinstance(self.embedding_function, Embeddings):
-            embedding = await self.embedding_function.aembed_query(query)
+        embedding: List[float] = await self._aembed_query(query)
+
         documents = await self.asimilarity_search_by_vector(
             embedding=embedding, k=k, db_filter=db_filter, **kwargs
         )
@@ -1320,7 +1516,7 @@ class OracleVS(VectorStore):
         embedding: List[float],
         k: int = 4,
         *,
-        db_filter: Optional[FilterCondition | FilterGroup] = None,
+        db_filter: Optional[dict] = None,
         **kwargs: Any,
     ) -> List[Document]:
         docs_and_scores = self.similarity_search_by_vector_with_relevance_scores(
@@ -1333,7 +1529,7 @@ class OracleVS(VectorStore):
         embedding: List[float],
         k: int = 4,
         *,
-        db_filter: Optional[FilterCondition | FilterGroup] = None,
+        db_filter: Optional[dict] = None,
         **kwargs: Any,
     ) -> List[Document]:
         docs_and_scores = await self.asimilarity_search_by_vector_with_relevance_scores(
@@ -1346,13 +1542,11 @@ class OracleVS(VectorStore):
         query: str,
         k: int = 4,
         *,
-        db_filter: Optional[FilterCondition | FilterGroup] = None,
+        db_filter: Optional[dict] = None,
         **kwargs: Any,
     ) -> List[Tuple[Document, float]]:
         """Return docs most similar to query."""
-        embedding: List[float] = []
-        if isinstance(self.embedding_function, Embeddings):
-            embedding = self.embedding_function.embed_query(query)
+        embedding: List[float] = self._embed_query(query)
         docs_and_scores = self.similarity_search_by_vector_with_relevance_scores(
             embedding=embedding, k=k, db_filter=db_filter, **kwargs
         )
@@ -1363,13 +1557,11 @@ class OracleVS(VectorStore):
         query: str,
         k: int = 4,
         *,
-        db_filter: Optional[FilterCondition | FilterGroup] = None,
+        db_filter: Optional[dict] = None,
         **kwargs: Any,
     ) -> List[Tuple[Document, float]]:
         """Return docs most similar to query."""
-        embedding: List[float] = []
-        if isinstance(self.embedding_function, Embeddings):
-            embedding = await self.embedding_function.aembed_query(query)
+        embedding: List[float] = await self._aembed_query(query)
         docs_and_scores = await self.asimilarity_search_by_vector_with_relevance_scores(
             embedding=embedding, k=k, db_filter=db_filter, **kwargs
         )
@@ -1381,7 +1573,7 @@ class OracleVS(VectorStore):
         embedding: List[float],
         k: int = 4,
         *,
-        db_filter: Optional[FilterCondition | FilterGroup] = None,
+        db_filter: Optional[dict] = None,
         **kwargs: Any,
     ) -> List[Tuple[Document, float]]:
         docs_and_scores = []
@@ -1432,7 +1624,7 @@ class OracleVS(VectorStore):
         embedding: List[float],
         k: int = 4,
         *,
-        db_filter: Optional[FilterCondition | FilterGroup] = None,
+        db_filter: Optional[dict] = None,
         **kwargs: Any,
     ) -> List[Tuple[Document, float]]:
         docs_and_scores = []
@@ -1482,7 +1674,7 @@ class OracleVS(VectorStore):
         embedding: List[float],
         k: int = 4,
         *,
-        db_filter: Optional[FilterCondition | FilterGroup] = None,
+        db_filter: Optional[dict] = None,
         **kwargs: Any,
     ) -> List[Tuple[Document, float, NDArray[np.float32]]]:
         embedding_arr: Any = array.array("f", embedding)
@@ -1537,7 +1729,7 @@ class OracleVS(VectorStore):
         embedding: List[float],
         k: int = 4,
         *,
-        db_filter: Optional[FilterCondition | FilterGroup] = None,
+        db_filter: Optional[dict] = None,
         **kwargs: Any,
     ) -> List[Tuple[Document, float, NDArray[np.float32]]]:
         embedding_arr: Any = array.array("f", embedding)
@@ -1595,7 +1787,7 @@ class OracleVS(VectorStore):
         k: int = 4,
         fetch_k: int = 20,
         lambda_mult: float = 0.5,
-        db_filter: Optional[FilterCondition | FilterGroup] = None,
+        db_filter: Optional[dict] = None,
     ) -> List[Tuple[Document, float]]:
         """Return docs and their similarity scores selected using the
         maximal marginal
@@ -1611,7 +1803,7 @@ class OracleVS(VectorStore):
           k: Number of Documents to return. Defaults to 4.
           fetch_k: Number of Documents to fetch before filtering to
                    pass to MMR algorithm.
-          db_filter: (Optional[FilterCondition | FilterGroup]): Filter by metadata.
+          db_filter: (Optional[dict]): Filter by metadata.
                                                                 Defaults to None.
           lambda_mult: Number between 0 and 1 that determines the degree
                        of diversity among the results with 0 corresponding
@@ -1641,7 +1833,7 @@ class OracleVS(VectorStore):
         k: int = 4,
         fetch_k: int = 20,
         lambda_mult: float = 0.5,
-        db_filter: Optional[FilterCondition | FilterGroup] = None,
+        db_filter: Optional[dict] = None,
     ) -> List[Tuple[Document, float]]:
         """Return docs and their similarity scores selected using the
         maximal marginal
@@ -1657,7 +1849,7 @@ class OracleVS(VectorStore):
           k: Number of Documents to return. Defaults to 4.
           fetch_k: Number of Documents to fetch before filtering to
                    pass to MMR algorithm.
-          db_filter: (Optional[FilterCondition | FilterGroup]): Filter by metadata.
+          db_filter: (Optional[dict]): Filter by metadata.
                                                                 Defaults to None.
           lambda_mult: Number between 0 and 1 that determines the degree
                        of diversity among the results with 0 corresponding
@@ -1688,7 +1880,7 @@ class OracleVS(VectorStore):
         k: int = 4,
         fetch_k: int = 20,
         lambda_mult: float = 0.5,
-        db_filter: Optional[FilterCondition | FilterGroup] = None,
+        db_filter: Optional[dict] = None,
         **kwargs: Any,
     ) -> List[Document]:
         """Return docs selected using the maximal marginal relevance.
@@ -1706,7 +1898,7 @@ class OracleVS(VectorStore):
                        of diversity among the results with 0 corresponding
                        to maximum diversity and 1 to minimum diversity.
                        Defaults to 0.5.
-          db_filter: (Optional[FilterCondition | FilterGroup]): Filter by metadata.
+          db_filter: (Optional[dict]): Filter by metadata.
                                                                 Defaults to None.
           **kwargs: Any
         Returns:
@@ -1727,7 +1919,7 @@ class OracleVS(VectorStore):
         k: int = 4,
         fetch_k: int = 20,
         lambda_mult: float = 0.5,
-        db_filter: Optional[FilterCondition | FilterGroup] = None,
+        db_filter: Optional[dict] = None,
         **kwargs: Any,
     ) -> List[Document]:
         """Return docs selected using the maximal marginal relevance.
@@ -1745,7 +1937,7 @@ class OracleVS(VectorStore):
                        of diversity among the results with 0 corresponding
                        to maximum diversity and 1 to minimum diversity.
                        Defaults to 0.5.
-          db_filter: (Optional[FilterCondition | FilterGroup]): Filter by metadata.
+          db_filter: (Optional[dict]): Filter by metadata.
                                                                 Defaults to None.
           **kwargs: Any
         Returns:
@@ -1769,7 +1961,7 @@ class OracleVS(VectorStore):
         k: int = 4,
         fetch_k: int = 20,
         lambda_mult: float = 0.5,
-        db_filter: Optional[FilterCondition | FilterGroup] = None,
+        db_filter: Optional[dict] = None,
         **kwargs: Any,
     ) -> List[Document]:
         """Return docs selected using the maximal marginal relevance.
@@ -1787,7 +1979,7 @@ class OracleVS(VectorStore):
                        of diversity among the results with 0 corresponding
                        to maximum diversity and 1 to minimum diversity.
                        Defaults to 0.5.
-          db_filter: (Optional[FilterCondition | FilterGroup]): Filter by metadata.
+          db_filter: (Optional[dict]): Filter by metadata.
                                                                 Defaults to None.
           **kwargs
         Returns:
@@ -1814,7 +2006,7 @@ class OracleVS(VectorStore):
         k: int = 4,
         fetch_k: int = 20,
         lambda_mult: float = 0.5,
-        db_filter: Optional[FilterCondition | FilterGroup] = None,
+        db_filter: Optional[dict] = None,
         **kwargs: Any,
     ) -> List[Document]:
         """Return docs selected using the maximal marginal relevance.
@@ -1832,7 +2024,7 @@ class OracleVS(VectorStore):
                        of diversity among the results with 0 corresponding
                        to maximum diversity and 1 to minimum diversity.
                        Defaults to 0.5.
-          db_filter: (Optional[FilterCondition | FilterGroup]): Filter by metadata.
+          db_filter: (Optional[dict]): Filter by metadata.
                                                                 Defaults to None.
           **kwargs
         Returns:
