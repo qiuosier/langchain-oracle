@@ -12,6 +12,7 @@ import array
 import functools
 import hashlib
 import inspect
+import json
 import logging
 import os
 import re
@@ -93,6 +94,9 @@ NOT_OPERS = ["$nin", "$not", "$exists"]
 def _get_comparison_string(
     oper: str, value: Any, bind_variables: List[str]
 ) -> tuple[str, str]:
+    if oper not in COMPARISON_MAP:
+        raise ValueError(f"Invalid operator: {oper}")
+
     # usual two sided operator case
     if COMPARISON_MAP[oper] != "":
         bind_l = len(bind_variables)
@@ -194,10 +198,10 @@ def _generate_condition(
 
     if not isinstance(value, (dict, list, tuple)):
         # scalar-equality Clause
-        bind_l = f":value{len(bind_variables)}"
+        bind = f":value{len(bind_variables)}"
         bind_variables.append(value)
 
-        return SINGLE_MASK.format(key=metadata_key, oper="==", value_bind=bind_l)
+        return SINGLE_MASK.format(key=metadata_key, oper="==", value_bind=bind)
 
     elif isinstance(value, dict):
         # all values are filters
@@ -205,7 +209,7 @@ def _generate_condition(
         passings: str
 
         # comparison operator keys
-        if len(value.keys() - COMPARISON_MAP.keys()) == 0:
+        if all(value_key.startswith("$") for value_key in value.keys()):
             not_dict = {}
 
             passing_values = []
@@ -213,7 +217,11 @@ def _generate_condition(
 
             for k, v in value.items():
                 # if need to negate, cannot combine in single JSON_EXISTS
-                if k in NOT_OPERS:
+                if (
+                    k in NOT_OPERS
+                    or (k == "$eq" and isinstance(v, (list, dict)))
+                    or (k == "$ne" and isinstance(v, (list, dict)))
+                ):
                     not_dict[k] = v
                     continue
 
@@ -255,7 +263,7 @@ def _generate_condition(
                             f"NOT (JSON_EXISTS(metadata, '$.{metadata_key}'))"
                         )
 
-                else:  # for now only $nin
+                elif k == "$nin":  # for now only $nin
                     result, passings = _get_comparison_string(k, v, bind_variables)
 
                     all_conditions.append(
@@ -263,6 +271,28 @@ def _generate_condition(
                         + MULTIPLE_MASK.format(
                             key=metadata_key, filters=result, passes=passings
                         )
+                    )
+
+                elif k == "$eq":
+                    bind_l = len(bind_variables)
+                    bind_variables.append(json.dumps(v))
+
+                    all_conditions.append(
+                        "JSON_EQUAL("
+                        f"    JSON_QUERY(metadata, '$.{metadata_key}' ),"
+                        f"    JSON(:value{bind_l})"
+                        ")"
+                    )
+
+                elif k == "$ne":
+                    bind_l = len(bind_variables)
+                    bind_variables.append(json.dumps(v))
+
+                    all_conditions.append(
+                        "NOT (JSON_EQUAL("
+                        f"    JSON_QUERY(metadata, '$.{metadata_key}' ),"
+                        f"    JSON(:value{bind_l})"
+                        "))"
                     )
 
             res = " AND ".join(all_conditions)

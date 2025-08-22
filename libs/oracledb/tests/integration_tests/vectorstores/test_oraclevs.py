@@ -2649,29 +2649,51 @@ def test_filters() -> None:
 
     vs.add_texts(texts, metadatas)
 
-    """SELECT json_exists('{
-            "id": "1",
-            "name": "Jason",
-            "age": 45,
-            "address": [
-                {
-                    "street": "25 A street",
-                    "city": "Mono Vista",
-                    "zip": 94088,
-                    "state": "CA",
-                }
-            ],
-            "drinks": "tea",
-        }', '$.name?(@ in ("json","b"))');"""
-
     filter_res: list[tuple[dict, list[str]]] = [
         ({"drinks": {"$exists": True}}, ["1", "3"]),
         ({"address.zip": 94088}, ["1"]),
         ({"name": {"$eq": "Jason"}}, ["1"]),
         ({"drinks": {"$ne": "tea"}}, ["3"]),  # exits and not equal
+        ({"drinks": {"$eq": ["soda", "tea"]}}, ["3"]),
+        ({"drinks": {"$ne": ["soda", "tea"]}}, ["1"]),
+        (
+            {
+                "address[0]": {
+                    "$eq": {
+                        "street": "25 A street",
+                        "city": "Mono Vista",
+                        "zip": 94088,
+                        "state": "CA",
+                    }
+                }
+            },
+            ["1"],
+        ),
+        (
+            {
+                "address[0]": {
+                    "$ne": {
+                        "street": "25 A street",
+                        "city": "Mono Vista",
+                        "zip": 94088,
+                        "state": "CA",
+                    }
+                }
+            },
+            ["2"],
+        ),
         (
             {"$or": [{"drinks": {"$exists": False}}, {"drinks": {"$ne": "tea"}}]},
             ["2", "3"],
+        ),
+        (
+            {
+                "$or": [
+                    {"drinks": {"$exists": False}},
+                    {"drinks": {"$ne": ["soda", "tea"]}},
+                ]
+            },
+            ["1", "2"],
         ),
         ({"age": {"$gt": 45, "$lt": 55}}, ["2"]),
         ({"age": {"$gt": 45}}, ["2", "3"]),
@@ -2754,6 +2776,10 @@ def test_filters() -> None:
         _f = {"ss')--": "HELLOE"}
         result = vs.similarity_search("Hello", k=3, db_filter=_f)
 
+    with pytest.raises(ValueError, match="Invalid operator"):
+        _f = {"drinks": {"$neq": ["soda", "tea"]}}
+        result = vs.similarity_search("Hello", k=3, db_filter=_f)
+
     drop_table_purge(connection, "TB10")
 
 
@@ -2821,9 +2847,46 @@ async def test_filters_async() -> None:
         ({"address.zip": 94088}, ["1"]),
         ({"name": {"$eq": "Jason"}}, ["1"]),
         ({"drinks": {"$ne": "tea"}}, ["3"]),  # exits and not equal
+        ({"drinks": {"$eq": ["soda", "tea"]}}, ["3"]),
+        ({"drinks": {"$ne": ["soda", "tea"]}}, ["1"]),
+        (
+            {
+                "address[0]": {
+                    "$eq": {
+                        "street": "25 A street",
+                        "city": "Mono Vista",
+                        "zip": 94088,
+                        "state": "CA",
+                    }
+                }
+            },
+            ["1"],
+        ),
+        (
+            {
+                "address[0]": {
+                    "$ne": {
+                        "street": "25 A street",
+                        "city": "Mono Vista",
+                        "zip": 94088,
+                        "state": "CA",
+                    }
+                }
+            },
+            ["2"],
+        ),
         (
             {"$or": [{"drinks": {"$exists": False}}, {"drinks": {"$ne": "tea"}}]},
             ["2", "3"],
+        ),
+        (
+            {
+                "$or": [
+                    {"drinks": {"$exists": False}},
+                    {"drinks": {"$ne": ["soda", "tea"]}},
+                ]
+            },
+            ["1", "2"],
         ),
         ({"age": {"$gt": 45, "$lt": 55}}, ["2"]),
         ({"age": {"$gt": 45}}, ["2", "3"]),
@@ -2904,6 +2967,10 @@ async def test_filters_async() -> None:
 
     with pytest.raises(ValueError, match="Invalid metadata key"):
         _f = {"ss')--": "HELLOE"}
+        result = await vs.asimilarity_search("Hello", k=3, db_filter=_f)
+
+    with pytest.raises(ValueError, match="Invalid operator"):
+        _f = {"drinks": {"$neq": ["soda", "tea"]}}
         result = await vs.asimilarity_search("Hello", k=3, db_filter=_f)
 
     await adrop_table_purge(connection, "TB10")
