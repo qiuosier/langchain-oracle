@@ -87,7 +87,7 @@ COMPARISON_MAP = {
     "$not": "",
 }
 
-# pperations that may need negation
+# operations that may need negation
 NOT_OPERS = ["$nin", "$not", "$exists"]
 
 
