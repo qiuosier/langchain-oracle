@@ -407,10 +407,6 @@ class OCIModelDeploymentLLM(BaseLLM, BaseOCIModelDeployment):
                 model="odsc-llm",
                 streaming=True,
                 model_kwargs={"frequency_penalty": 1.0},
-                headers={
-                    "route": "/v1/completions",
-                    # other request headers ...
-                }
             )
             llm.invoke("tell me a joke.")
 
@@ -476,25 +472,6 @@ class OCIModelDeploymentLLM(BaseLLM, BaseOCIModelDeployment):
         return {
             **{"endpoint": self.endpoint, "model_kwargs": _model_kwargs},
             **self._default_params,
-        }
-
-    def _headers(
-        self, is_async: Optional[bool] = False, body: Optional[dict] = None
-    ) -> Dict:
-        """Construct and return the headers for a request.
-
-        Args:
-            is_async (bool, optional): Indicates if the request is asynchronous.
-                Defaults to `False`.
-            body (optional): The request body to be included in the headers if
-                the request is asynchronous.
-
-        Returns:
-            Dict: A dictionary containing the appropriate headers for the request.
-        """
-        return {
-            "route": DEFAULT_INFERENCE_ENDPOINT,
-            **super()._headers(is_async=is_async, body=body),
         }
 
     def _generate(

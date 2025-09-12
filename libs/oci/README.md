@@ -84,10 +84,6 @@ chat = ChatOCIModelDeployment(
         "temperature": 0.2,
         "max_tokens": 512,
     },  # other model params...
-    default_headers={
-        "route": "/v1/chat/completions",
-        # other request headers ...
-    },
 )
 chat.invoke(messages)
 

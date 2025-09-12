@@ -117,10 +117,6 @@ class ChatOCIModelDeployment(BaseChatModel, BaseOCIModelDeployment):
                     "temperature": 0.2,
                     # other model parameters ...
                 },
-                default_headers={
-                    "route": "/v1/chat/completions",
-                    # other request headers ...
-                },
             )
 
     Invocation:
@@ -301,25 +297,6 @@ class ChatOCIModelDeployment(BaseChatModel, BaseOCIModelDeployment):
             "model": self.model,
             "stop": self.stop,
             "stream": self.streaming,
-        }
-
-    def _headers(
-        self, is_async: Optional[bool] = False, body: Optional[dict] = None
-    ) -> Dict:
-        """Construct and return the headers for a request.
-
-        Args:
-            is_async (bool, optional): Indicates if the request is asynchronous.
-                Defaults to `False`.
-            body (optional): The request body to be included in the headers if
-                the request is asynchronous.
-
-        Returns:
-            Dict: A dictionary containing the appropriate headers for the request.
-        """
-        return {
-            "route": DEFAULT_INFERENCE_ENDPOINT_CHAT,
-            **super()._headers(is_async=is_async, body=body),
         }
 
     def _generate(
