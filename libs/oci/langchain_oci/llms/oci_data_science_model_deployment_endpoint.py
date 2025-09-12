@@ -112,7 +112,10 @@ class BaseOCIModelDeployment(Serializable):
         return values
 
     def _headers(
-        self, is_async: Optional[bool] = False, body: Optional[dict] = None
+        self,
+        is_async: Optional[bool] = False,
+        body: Optional[dict] = None,
+        stream: Optional[bool] = False,
     ) -> Dict:
         """Construct and return the headers for a request.
 
@@ -126,6 +129,8 @@ class BaseOCIModelDeployment(Serializable):
             Dict: A dictionary containing the appropriate headers for the request.
         """
         headers = self.default_headers or {}
+        if stream:
+            headers.update({"Accept": "text/event-stream"})
         if is_async:
             signer = self.auth["signer"]
             _req = requests.Request("POST", self.endpoint, json=body)
@@ -133,27 +138,9 @@ class BaseOCIModelDeployment(Serializable):
             req = signer(req)
             for key, value in req.headers.items():
                 headers[key] = value
-
-            if self.streaming:
-                headers.update(
-                    {
-                        "enable-streaming": "true",
-                        "Accept": "text/event-stream",
-                    }
-                )
             return headers
 
-        headers.update(
-            {
-                "Content-Type": DEFAULT_CONTENT_TYPE_JSON,
-                "enable-streaming": "true",
-                "Accept": "text/event-stream",
-            }
-            if self.streaming
-            else {
-                "Content-Type": DEFAULT_CONTENT_TYPE_JSON,
-            }
-        )
+        headers.update({"Content-Type": DEFAULT_CONTENT_TYPE_JSON})
 
         return headers
 
@@ -169,7 +156,7 @@ class BaseOCIModelDeployment(Serializable):
                 request_timeout = kwargs.pop("request_timeout", DEFAULT_TIME_OUT)
                 data = kwargs.pop("data")
                 stream = kwargs.pop("stream", self.streaming)
-                headers = self._headers()
+                headers = self._headers(stream=stream)
                 auth = self.auth.get("signer")
                 url = self.endpoint
 
@@ -214,7 +201,7 @@ class BaseOCIModelDeployment(Serializable):
                 request_timeout = kwargs.pop("request_timeout", DEFAULT_TIME_OUT)
                 data = kwargs.pop("data")
                 stream = kwargs.pop("stream", self.streaming)
-                headers = self._headers(is_async=True, body=data)
+                headers = self._headers(is_async=True, body=data, stream=stream)
                 auth = self.auth.get("signer")
                 url = self.endpoint
                 method = "POST"
@@ -625,7 +612,7 @@ class OCIModelDeploymentLLM(BaseLLM, BaseOCIModelDeployment):
 
         """
         requests_kwargs = kwargs.pop("requests_kwargs", {})
-        self.streaming = True
+        kwargs["stream"] = True
         params = self._invocation_params(stop, **kwargs)
         body = self._construct_json_body(prompt, params)
 
@@ -671,7 +658,7 @@ class OCIModelDeploymentLLM(BaseLLM, BaseOCIModelDeployment):
 
         """
         requests_kwargs = kwargs.pop("requests_kwargs", {})
-        self.streaming = True
+        kwargs["stream"] = True
         params = self._invocation_params(stop, **kwargs)
         body = self._construct_json_body(prompt, params)
 

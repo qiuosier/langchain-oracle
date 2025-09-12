@@ -411,7 +411,7 @@ class ChatOCIModelDeployment(BaseChatModel, BaseOCIModelDeployment):
 
         """  # noqa: E501
         requests_kwargs = kwargs.pop("requests_kwargs", {})
-        self.streaming = True
+        kwargs["stream"] = True
         params = self._invocation_params(stop, **kwargs)
         body = self._construct_json_body(messages, params)  # request json body
 
@@ -524,7 +524,7 @@ class ChatOCIModelDeployment(BaseChatModel, BaseOCIModelDeployment):
 
         """  # noqa: E501
         requests_kwargs = kwargs.pop("requests_kwargs", {})
-        self.streaming = True
+        kwargs["stream"] = True
         params = self._invocation_params(stop, **kwargs)
         body = self._construct_json_body(messages, params)  # request json body
 
